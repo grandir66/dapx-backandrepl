@@ -73,15 +73,16 @@ DAPX-backandrepl è un'interfaccia web sviluppata da Domarc S.r.l. per gestire:
 
 ## 2. Installazione
 
-### 2.1 Download e Estrazione
+### 2.1 Clona il Repository
 
 ```bash
-# Scarica il pacchetto (sostituisci con il tuo metodo)
-cd /tmp
+# Installa git se non presente
+apt update && apt install -y git
 
-# Estrai
-tar -xzf sanoid-manager-1.0.0.tar.gz
-cd sanoid-manager-1.0.0
+# Clona il repository
+cd /opt
+git clone https://github.com/grandir66/dapx-backandrepl.git
+cd dapx-backandrepl
 ```
 
 ### 2.2 Esecuzione Installer
@@ -89,6 +90,16 @@ cd sanoid-manager-1.0.0
 ```bash
 chmod +x install.sh
 ./install.sh
+```
+
+### 2.3 Aggiornamento
+
+Per aggiornare a una nuova versione:
+
+```bash
+cd /opt/dapx-backandrepl
+git pull origin main
+systemctl restart sanoid-manager
 ```
 
 L'installer esegue automaticamente:
@@ -102,7 +113,7 @@ L'installer esegue automaticamente:
 8. ✅ Genera chiavi SSH
 9. ✅ Avvia il servizio
 
-### 2.3 Configurazione SSH per Nodi Remoti
+### 2.4 Configurazione SSH per Nodi Remoti
 
 L'installer mostra la chiave pubblica SSH. Copiala su ogni nodo:
 
@@ -117,7 +128,7 @@ Verifica la connessione:
 ssh -i /root/.ssh/id_rsa root@192.168.1.10 "hostname"
 ```
 
-### 2.4 Verifica Installazione
+### 2.5 Verifica Installazione
 
 ```bash
 # Stato servizio
@@ -125,7 +136,7 @@ systemctl status sanoid-manager
 
 # Test API
 curl http://localhost:8420/api/health
-# Output atteso: {"status":"healthy","version":"1.0.0"}
+# Output atteso: {"status":"healthy","version":"3.3.0"}
 ```
 
 ---
