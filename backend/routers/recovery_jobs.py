@@ -991,25 +991,31 @@ async def list_pbs_backups(
                 # Lista storage e trova quello PBS
                 result = await ssh_service.execute(
                     hostname=pve_node.hostname,
-                    command="pvesm status --output-format json 2>/dev/null",
+                    command="pvesm status 2>/dev/null",
                     port=pve_node.ssh_port,
                     username=pve_node.ssh_user,
                     key_path=pve_node.ssh_key_path
                 )
-                if result.success:
-                    try:
-                        storages = json.loads(result.stdout)
-                        for st in storages:
-                            if st.get("type") == "pbs" and st.get("active"):
-                                storage_name = st.get("storage")
+                if result.success and result.stdout:
+                    # Parse output testuale: Name Type Status Total Used Available %
+                    lines = result.stdout.strip().split('\n')
+                    for line in lines[1:]:  # Skip header
+                        parts = line.split()
+                        if len(parts) >= 3:
+                            st_name = parts[0]
+                            st_type = parts[1]
+                            st_status = parts[2]
+                            if st_type == "pbs" and st_status == "active":
+                                storage_name = st_name
+                                logger.info(f"Trovato storage PBS: {storage_name}")
                                 break
-                    except:
-                        pass
             
             if storage_name:
                 # Usa pvesh per listare i backup
-                hostname = pve_node.pve_node_name or pve_node.hostname.split('.')[0]
-                cmd = f"pvesh get /nodes/{hostname}/storage/{storage_name}/content --output-format json 2>/dev/null"
+                # Il nome del nodo PVE è il nome configurato nel DB (es: DA-PX-03)
+                pve_name = pve_node.name
+                cmd = f"pvesh get /nodes/{pve_name}/storage/{storage_name}/content --output-format json 2>/dev/null"
+                logger.info(f"Esecuzione comando: {cmd}")
                 
                 result = await ssh_service.execute(
                     hostname=pve_node.hostname,
