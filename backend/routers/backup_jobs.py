@@ -338,7 +338,7 @@ async def execute_backup_task(job_id: int, db_path: str):
         
         # Costruisci comando backup
         vm_cmd = "qm" if job.vm_type == "qemu" else "pct"
-        storage_id = job.pbs_storage_id or "pbs-backup"
+        storage_id = await _resolve_backup_storage(source_node, job.pbs_storage_id)
         
         backup_cmd = f"vzdump {job.vm_id} --storage {storage_id} --mode {job.backup_mode} --compress {job.backup_compress}"
         
@@ -536,4 +536,29 @@ async def delete_backup(
     except Exception as e:
         logger.error(f"Errore delete backup: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _resolve_backup_storage(node: Node, preferred: Optional[str]) -> str:
+    """Determina lo storage PBS da usare per il backup."""
+    if preferred:
+        return preferred
+
+    result = await ssh_service.execute(
+        hostname=node.hostname,
+        command="pvesm status 2>/dev/null",
+        port=node.ssh_port,
+        username=node.ssh_user,
+        key_path=node.ssh_key_path
+    )
+
+    if result.success and result.stdout:
+        lines = result.stdout.strip().splitlines()
+        for line in lines[1:]:
+            parts = line.split()
+            if len(parts) >= 3:
+                st_name, st_type, st_status = parts[0], parts[1], parts[2]
+                if st_type == "pbs" and st_status == "active":
+                    return st_name
+
+    return "pbs-backup"
 
