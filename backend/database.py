@@ -291,6 +291,8 @@ class Node(Base):
     recovery_jobs_source = relationship("RecoveryJob", foreign_keys="RecoveryJob.source_node_id", back_populates="source_node")
     recovery_jobs_pbs = relationship("RecoveryJob", foreign_keys="RecoveryJob.pbs_node_id", back_populates="pbs_node")
     recovery_jobs_dest = relationship("RecoveryJob", foreign_keys="RecoveryJob.dest_node_id", back_populates="dest_node")
+    backup_jobs_source = relationship("BackupJob", foreign_keys="BackupJob.source_node_id", back_populates="source_node")
+    backup_jobs_pbs = relationship("BackupJob", foreign_keys="BackupJob.pbs_node_id", back_populates="pbs_node")
 
 
 class Dataset(Base):
@@ -471,6 +473,79 @@ class RecoveryJob(Base):
     source_node = relationship("Node", foreign_keys=[source_node_id], back_populates="recovery_jobs_source")
     pbs_node = relationship("Node", foreign_keys=[pbs_node_id], back_populates="recovery_jobs_pbs")
     dest_node = relationship("Node", foreign_keys=[dest_node_id], back_populates="recovery_jobs_dest")
+
+
+class BackupJobStatus(str, enum.Enum):
+    """Stati del backup job"""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class BackupJob(Base):
+    """
+    Job di backup VM verso PBS (Proxmox Backup Server).
+    Solo backup, senza restore automatico.
+    """
+    __tablename__ = "backup_jobs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    
+    # VM sorgente
+    source_node_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)
+    vm_id = Column(Integer, nullable=False)  # VMID da backuppare
+    vm_type = Column(String(10), default="qemu")  # qemu, lxc
+    vm_name = Column(String(100), nullable=True)
+    
+    # PBS destinazione
+    pbs_node_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)
+    pbs_datastore = Column(String(100), nullable=True)  # Datastore PBS
+    pbs_storage_id = Column(String(100), nullable=True)  # Nome storage PBS configurato (es: pbs-backup)
+    
+    # Opzioni backup
+    backup_mode = Column(String(20), default="snapshot")  # snapshot, stop, suspend
+    backup_compress = Column(String(20), default="zstd")  # none, lzo, gzip, zstd
+    include_all_disks = Column(Boolean, default=True)
+    bandwidth_limit = Column(Integer, nullable=True)  # KB/s, null = no limit
+    
+    # Retention policy
+    keep_last = Column(Integer, default=3)  # Mantieni ultimi N backup
+    keep_daily = Column(Integer, nullable=True)
+    keep_weekly = Column(Integer, nullable=True)
+    keep_monthly = Column(Integer, nullable=True)
+    
+    # Scheduling
+    schedule = Column(String(100), nullable=True)  # Cron format
+    is_active = Column(Boolean, default=True)
+    
+    # Stato corrente
+    current_status = Column(String(20), default=BackupJobStatus.PENDING.value)
+    last_backup_time = Column(DateTime, nullable=True)
+    last_backup_id = Column(String(100), nullable=True)  # ID backup PBS
+    last_backup_size = Column(BigInteger, nullable=True)  # Bytes
+    
+    # Stats
+    last_run = Column(DateTime, nullable=True)
+    last_status = Column(String(50), nullable=True)
+    last_duration = Column(Integer, nullable=True)  # secondi
+    last_error = Column(Text, nullable=True)
+    run_count = Column(Integer, default=0)
+    error_count = Column(Integer, default=0)
+    consecutive_failures = Column(Integer, default=0)
+    
+    # Notifiche
+    notify_on_each_run = Column(Boolean, default=False)
+    notify_on_failure = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
+    # Relationships
+    source_node = relationship("Node", foreign_keys=[source_node_id], back_populates="backup_jobs_source")
+    pbs_node = relationship("Node", foreign_keys=[pbs_node_id], back_populates="backup_jobs_pbs")
 
 
 class JobLog(Base):

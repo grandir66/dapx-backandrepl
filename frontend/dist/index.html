@@ -804,11 +804,17 @@
                     </svg>
                     Replica
                 </div>
+                <div class="nav-item" :class="{ active: currentPage === 'backup' }" @click="currentPage = 'backup'">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                    </svg>
+                    Backup (PBS)
+                </div>
                 <div class="nav-item" :class="{ active: currentPage === 'recovery' }" @click="currentPage = 'recovery'">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/>
                     </svg>
-                    Replica (PBS)
+                    Recovery (PBS)
                 </div>
                 <div class="nav-item" :class="{ active: currentPage === 'vms' }" @click="currentPage = 'vms'">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2368,6 +2374,248 @@
                     
                     <div v-if="vmGroups.length === 0 && singleJobs.length === 0" style="padding: 40px; text-align: center; color: var(--text-secondary);">
                         Nessuna replica configurata. Seleziona una VM sopra per iniziare.
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Backup Jobs (PBS) Page -->
+            <div v-if="currentPage === 'backup'">
+                <div class="page-header">
+                    <h1 class="page-title">📦 Backup Jobs (PBS)</h1>
+                    <p class="page-subtitle">Backup automatici VM verso Proxmox Backup Server</p>
+                </div>
+                
+                <!-- Info Box -->
+                <div class="card" style="background: linear-gradient(135deg, rgba(33, 150, 243, 0.1), rgba(3, 169, 244, 0.1)); border-color: #2196f3;">
+                    <div style="display: flex; gap: 16px; align-items: flex-start;">
+                        <div style="font-size: 2rem;">☁️</div>
+                        <div>
+                            <h3 style="color: #64b5f6; margin-bottom: 8px;">Backup verso PBS</h3>
+                            <p style="color: var(--text-secondary); line-height: 1.6;">
+                                Configura backup schedulati delle tue VM verso Proxmox Backup Server.<br>
+                                <strong>Funzionalità:</strong> Backup incrementali • Compressione • Retention policy • Notifiche
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Stats -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">{{ backupJobs.length }}</div>
+                        <div class="stat-label">Backup Jobs</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ backupJobs.filter(j => j.is_active).length }}</div>
+                        <div class="stat-label">Attivi</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ backupJobs.filter(j => j.last_status === 'success').length }}</div>
+                        <div class="stat-label">Ultimi OK</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ backupJobs.filter(j => j.last_status === 'failed').length }}</div>
+                        <div class="stat-label">Falliti</div>
+                    </div>
+                </div>
+                
+                <!-- Nuovo Backup Job -->
+                <div class="card">
+                    <h3 class="card-title">➕ Nuovo Backup Job</h3>
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label class="form-label">Nome Job</label>
+                            <input type="text" class="form-input" v-model="newBackupJob.name" placeholder="es: Backup-VM-Web">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Nodo Sorgente (PVE)</label>
+                            <select class="form-input" v-model="newBackupJob.source_node_id" @change="loadSourceVmsForBackup">
+                                <option value="">-- Seleziona --</option>
+                                <option v-for="node in pveNodes" :key="node.id" :value="node.id">{{ node.name }}</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">VM da backuppare</label>
+                            <select class="form-input" v-model="newBackupJob.vm_id" @change="selectBackupVm">
+                                <option value="">-- Seleziona VM --</option>
+                                <option v-for="vm in sourceVmsForBackup" :key="vm.vmid" :value="vm.vmid">
+                                    {{ vm.vmid }} - {{ vm.name || 'VM' }} ({{ vm.type }})
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label class="form-label">Nodo PBS Destinazione</label>
+                            <select class="form-input" v-model="newBackupJob.pbs_node_id">
+                                <option value="">-- Seleziona PBS --</option>
+                                <option v-for="node in pbsNodes" :key="node.id" :value="node.id">{{ node.name }}</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Modalità Backup</label>
+                            <select class="form-input" v-model="newBackupJob.backup_mode">
+                                <option value="snapshot">Snapshot (Live)</option>
+                                <option value="stop">Stop (Arresto VM)</option>
+                                <option value="suspend">Suspend</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Schedule</label>
+                            <select class="form-input" v-model="newBackupJob.schedule">
+                                <option value="">Manuale</option>
+                                <option value="0 2 * * *">Ogni notte alle 2:00</option>
+                                <option value="0 3 * * 0">Ogni domenica alle 3:00</option>
+                                <option value="0 */6 * * *">Ogni 6 ore</option>
+                                <option value="0 */12 * * *">Ogni 12 ore</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label class="form-label">Mantieni ultimi N backup</label>
+                            <input type="number" class="form-input" v-model="newBackupJob.keep_last" min="1" max="100">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Compressione</label>
+                            <select class="form-input" v-model="newBackupJob.backup_compress">
+                                <option value="zstd">ZSTD (Consigliato)</option>
+                                <option value="lzo">LZO (Veloce)</option>
+                                <option value="gzip">GZIP</option>
+                                <option value="none">Nessuna</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="display: flex; align-items: flex-end;">
+                            <button class="btn btn-primary" @click="createBackupJob" :disabled="!newBackupJob.name || !newBackupJob.source_node_id || !newBackupJob.vm_id || !newBackupJob.pbs_node_id">
+                                ➕ Crea Backup Job
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Lista Backup Jobs -->
+                <div class="card">
+                    <h3 class="card-title">📋 Backup Jobs Configurati</h3>
+                    <table class="table" v-if="backupJobs.length > 0">
+                        <thead>
+                            <tr>
+                                <th>Nome</th>
+                                <th>VM</th>
+                                <th>PBS</th>
+                                <th>Schedule</th>
+                                <th>Ultimo Backup</th>
+                                <th>Stato</th>
+                                <th>Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="job in backupJobs" :key="job.id">
+                                <td>
+                                    <strong>{{ job.name }}</strong>
+                                    <div style="font-size: 0.85em; color: var(--text-secondary);">
+                                        {{ job.backup_mode }} • {{ job.backup_compress }}
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="badge badge-info">{{ job.vm_type?.toUpperCase() }} #{{ job.vm_id }}</span>
+                                    <div v-if="job.vm_name" style="font-size: 0.85em;">{{ job.vm_name }}</div>
+                                </td>
+                                <td>{{ job.pbs_node_name || 'N/A' }}</td>
+                                <td>
+                                    <span v-if="job.schedule" class="badge badge-primary">{{ formatSchedule(job.schedule) }}</span>
+                                    <span v-else class="badge badge-secondary">Manuale</span>
+                                </td>
+                                <td>
+                                    <div v-if="job.last_backup_time">
+                                        {{ formatDate(job.last_backup_time) }}
+                                        <div style="font-size: 0.85em; color: var(--text-secondary);">
+                                            {{ job.last_duration ? job.last_duration + 's' : '' }}
+                                        </div>
+                                    </div>
+                                    <span v-else style="color: var(--text-secondary);">Mai</span>
+                                </td>
+                                <td>
+                                    <span v-if="job.current_status === 'running'" class="badge badge-warning">⏳ In corso</span>
+                                    <span v-else-if="job.last_status === 'success'" class="badge badge-success">✓ OK</span>
+                                    <span v-else-if="job.last_status === 'failed'" class="badge badge-error">✗ Fallito</span>
+                                    <span v-else class="badge badge-secondary">-</span>
+                                    <div v-if="!job.is_active" style="font-size: 0.8em; color: var(--text-secondary);">⏸️ Disattivato</div>
+                                </td>
+                                <td>
+                                    <div style="display: flex; gap: 4px;">
+                                        <button class="btn btn-sm btn-primary" @click="runBackupJob(job.id)" :disabled="job.current_status === 'running'" title="Esegui ora">▶️</button>
+                                        <button class="btn btn-sm btn-secondary" @click="editBackupJob(job)" title="Modifica">✏️</button>
+                                        <button class="btn btn-sm btn-error" @click="deleteBackupJob(job.id)" title="Elimina">🗑️</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div v-else style="padding: 40px; text-align: center; color: var(--text-secondary);">
+                        Nessun backup job configurato. Crea il primo backup sopra.
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Edit Backup Job Modal -->
+            <div class="modal-overlay" v-if="showEditBackupJobModal && editingBackupJob" @click.self="showEditBackupJobModal = false">
+                <div class="modal" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h3 class="modal-title">✏️ Modifica Backup Job</h3>
+                        <button class="btn btn-icon btn-secondary" @click="showEditBackupJobModal = false">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label class="form-label">Nome Job</label>
+                            <input type="text" class="form-input" v-model="editingBackupJob.name">
+                        </div>
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label">Modalità</label>
+                                <select class="form-input" v-model="editingBackupJob.backup_mode">
+                                    <option value="snapshot">Snapshot</option>
+                                    <option value="stop">Stop</option>
+                                    <option value="suspend">Suspend</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Compressione</label>
+                                <select class="form-input" v-model="editingBackupJob.backup_compress">
+                                    <option value="zstd">ZSTD</option>
+                                    <option value="lzo">LZO</option>
+                                    <option value="gzip">GZIP</option>
+                                    <option value="none">Nessuna</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label">Mantieni ultimi N</label>
+                                <input type="number" class="form-input" v-model="editingBackupJob.keep_last" min="1">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Schedule</label>
+                                <select class="form-input" v-model="editingBackupJob.schedule">
+                                    <option value="">Manuale</option>
+                                    <option value="0 2 * * *">Ogni notte alle 2:00</option>
+                                    <option value="0 3 * * 0">Ogni domenica alle 3:00</option>
+                                    <option value="0 */6 * * *">Ogni 6 ore</option>
+                                    <option value="0 */12 * * *">Ogni 12 ore</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" v-model="editingBackupJob.is_active">
+                                <span :style="{ color: editingBackupJob.is_active ? 'var(--accent-primary)' : 'var(--text-secondary)' }">
+                                    {{ editingBackupJob.is_active ? '✅ Job Attivo' : '⏸️ Job Disattivato' }}
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" @click="showEditBackupJobModal = false">Annulla</button>
+                        <button class="btn btn-primary" @click="saveBackupJob">💾 Salva</button>
                     </div>
                 </div>
             </div>
@@ -4192,6 +4440,25 @@
                 const pveNodes = ref([]);
                 const showAddRecoveryJobModal = ref(false);
                 const sourceVmsForRecovery = ref([]);
+                
+                // Backup Jobs
+                const backupJobs = ref([]);
+                const sourceVmsForBackup = ref([]);
+                const showEditBackupJobModal = ref(false);
+                const editingBackupJob = ref(null);
+                const newBackupJob = ref({
+                    name: '',
+                    source_node_id: '',
+                    vm_id: '',
+                    vm_type: 'qemu',
+                    vm_name: '',
+                    pbs_node_id: '',
+                    backup_mode: 'snapshot',
+                    backup_compress: 'zstd',
+                    keep_last: 3,
+                    schedule: '',
+                    is_active: true
+                });
                 const newRecoveryJob = ref({
                     name: '',
                     source_node_id: '',
@@ -4446,6 +4713,100 @@
                 
                 const loadRecoveryJobs = async () => {
                     try { recoveryJobs.value = (await axios.get(`${API}/recovery-jobs/`)).data; } catch (e) { showToast('Errore caricamento recovery jobs', 'error'); }
+                };
+                
+                // Backup Jobs methods
+                const loadBackupJobs = async () => {
+                    try { 
+                        backupJobs.value = (await axios.get(`${API}/backup-jobs/`)).data; 
+                    } catch (e) { 
+                        console.error('Errore caricamento backup jobs:', e);
+                    }
+                };
+                
+                const loadSourceVmsForBackup = async () => {
+                    if (!newBackupJob.value.source_node_id) {
+                        sourceVmsForBackup.value = [];
+                        return;
+                    }
+                    try {
+                        const resp = await axios.get(`${API}/nodes/${newBackupJob.value.source_node_id}/vms`);
+                        sourceVmsForBackup.value = resp.data.vms || [];
+                    } catch (e) {
+                        console.error('Errore caricamento VM:', e);
+                        sourceVmsForBackup.value = [];
+                    }
+                };
+                
+                const selectBackupVm = () => {
+                    const vm = sourceVmsForBackup.value.find(v => v.vmid == newBackupJob.value.vm_id);
+                    if (vm) {
+                        newBackupJob.value.vm_type = vm.type || 'qemu';
+                        newBackupJob.value.vm_name = vm.name || '';
+                    }
+                };
+                
+                const createBackupJob = async () => {
+                    try {
+                        const payload = { ...newBackupJob.value };
+                        if (payload.schedule === '') payload.schedule = null;
+                        await axios.post(`${API}/backup-jobs/`, payload);
+                        showToast('Backup job creato!', 'success');
+                        loadBackupJobs();
+                        newBackupJob.value = {
+                            name: '', source_node_id: '', vm_id: '', vm_type: 'qemu', vm_name: '',
+                            pbs_node_id: '', backup_mode: 'snapshot', backup_compress: 'zstd',
+                            keep_last: 3, schedule: '', is_active: true
+                        };
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore creazione backup job', 'error');
+                    }
+                };
+                
+                const runBackupJob = async (jobId) => {
+                    try {
+                        await axios.post(`${API}/backup-jobs/${jobId}/run`);
+                        showToast('Backup avviato!', 'success');
+                        loadBackupJobs();
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore avvio backup', 'error');
+                    }
+                };
+                
+                const deleteBackupJob = async (jobId) => {
+                    if (!confirm('Eliminare questo backup job?')) return;
+                    try {
+                        await axios.delete(`${API}/backup-jobs/${jobId}`);
+                        showToast('Backup job eliminato', 'success');
+                        loadBackupJobs();
+                    } catch (e) {
+                        showToast('Errore eliminazione', 'error');
+                    }
+                };
+                
+                const editBackupJob = (job) => {
+                    editingBackupJob.value = { ...job };
+                    showEditBackupJobModal.value = true;
+                };
+                
+                const saveBackupJob = async () => {
+                    try {
+                        const payload = {
+                            name: editingBackupJob.value.name,
+                            backup_mode: editingBackupJob.value.backup_mode,
+                            backup_compress: editingBackupJob.value.backup_compress,
+                            keep_last: editingBackupJob.value.keep_last,
+                            schedule: editingBackupJob.value.schedule || null,
+                            is_active: editingBackupJob.value.is_active
+                        };
+                        await axios.put(`${API}/backup-jobs/${editingBackupJob.value.id}`, payload);
+                        showToast('Backup job aggiornato!', 'success');
+                        showEditBackupJobModal.value = false;
+                        editingBackupJob.value = null;
+                        loadBackupJobs();
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore aggiornamento', 'error');
+                    }
                 };
                 
                 // Dashboard methods
@@ -5687,6 +6048,12 @@
                     if (newPage === 'proxmox') {
                         // Carica dati Proxmox da localStorage, non forzare refresh
                         loadDashboard(false);
+                    } else if (newPage === 'backup') {
+                        loadBackupJobs();
+                        loadPbsAndPveNodes();
+                    } else if (newPage === 'recovery') {
+                        loadRecoveryJobs();
+                        loadPbsAndPveNodes();
                     }
                 });
                 
@@ -5714,6 +6081,9 @@
                     sourceVMs, vmReplicaWizard, btrfsWizard, vmGroups, singleJobs,
                     // Recovery Jobs (PBS)
                     recoveryJobs, pbsNodes, pveNodes, showAddRecoveryJobModal, sourceVmsForRecovery, newRecoveryJob,
+                    // Backup Jobs
+                    backupJobs, sourceVmsForBackup, newBackupJob, showEditBackupJobModal, editingBackupJob,
+                    loadBackupJobs, loadSourceVmsForBackup, selectBackupVm, createBackupJob, runBackupJob, deleteBackupJob, editBackupJob, saveBackupJob,
                     settings, authSettings, notifSettings,
                     showNodeModal, showSyncJobModal, editingSyncJobId, showUserModal, editingUser, showInfoModal,
                     // SSH Keys

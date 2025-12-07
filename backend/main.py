@@ -15,7 +15,7 @@ import logging
 
 from database import engine, Base, get_db, init_default_config, SessionLocal
 from routers import nodes, snapshots, sync_jobs, vms, logs, settings, auth, ssh_keys
-from routers import recovery_jobs, host_info
+from routers import recovery_jobs, backup_jobs, host_info
 from services.scheduler import SchedulerService
 
 # Configurazione logging
@@ -93,6 +93,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(nodes.router, prefix="/api/nodes", tags=["Nodes"])
 app.include_router(snapshots.router, prefix="/api/snapshots", tags=["Snapshots"])
 app.include_router(sync_jobs.router, prefix="/api/sync-jobs", tags=["Sync Jobs"])
+app.include_router(backup_jobs.router, prefix="/api/backup-jobs", tags=["Backup Jobs (PBS)"])
 app.include_router(recovery_jobs.router, prefix="/api/recovery-jobs", tags=["Recovery Jobs (PBS)"])
 app.include_router(vms.router, prefix="/api/vms", tags=["VMs"])
 app.include_router(logs.router, prefix="/api/logs", tags=["Logs"])
