@@ -13,10 +13,9 @@ import logging
 import re
 
 from database import (
-    get_db, Node, BackupJob, BackupJobStatus, JobLog, 
-    log_audit, NodeType
+    get_db, Node, BackupJob, BackupJobStatus, JobLog, NodeType
 )
-from routers.auth import get_current_user, require_operator, User
+from routers.auth import get_current_user, require_operator, User, log_audit
 from services import ssh_service
 
 logger = logging.getLogger(__name__)

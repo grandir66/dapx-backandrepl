@@ -3,7 +3,7 @@ Database models per DAPX-backandrepl
 Con supporto autenticazione integrata Proxmox
 """
 
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Text, ForeignKey, JSON, Enum
+from sqlalchemy import create_engine, Column, Integer, BigInteger, String, Boolean, DateTime, Text, ForeignKey, JSON, Enum
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
