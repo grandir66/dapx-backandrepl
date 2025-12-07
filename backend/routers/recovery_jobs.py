@@ -1271,10 +1271,26 @@ async def direct_restore(
     log_audit(db, user.id, "restore_started", "restore", 
               resource_id=vmid, details=f"Restore da PBS {pbs_node.name} verso {dest_node.name}")
     
+    # Crea entry nel job_logs
+    from database import JobLog
+    from datetime import datetime
+    
+    restore_log = JobLog(
+        job_type="restore",
+        node_name=dest_node.name,
+        status="running",
+        message=f"Restore VM {vmid} da PBS {pbs_node.name} (backup: {request.backup_id[:50]}...)",
+        started_at=datetime.utcnow()
+    )
+    db.add(restore_log)
+    db.commit()
+    db.refresh(restore_log)
+    
     # Esegui il restore
     datastore = pbs_node.pbs_datastore or "datastore1"
     storage = request.dest_storage
     
+    start_time = datetime.utcnow()
     result = await pbs_service.run_restore(
         dest_node_hostname=dest_node.hostname,
         vm_id=vmid,
@@ -1295,10 +1311,28 @@ async def direct_restore(
         dest_node_key=dest_node.ssh_key_path or "/root/.ssh/id_rsa"
     )
     
+    end_time = datetime.utcnow()
+    duration = int((end_time - start_time).total_seconds())
+    
     if not result.get("success"):
+        # Aggiorna log con errore
+        restore_log.status = "failed"
+        restore_log.error = result.get("error", "Errore sconosciuto")
+        restore_log.message = f"Restore VM {vmid} fallito: {result.get('error', 'Errore')[:100]}"
+        restore_log.completed_at = end_time
+        restore_log.duration = duration
+        db.commit()
+        
         log_audit(db, user.id, "restore_failed", "restore",
                   resource_id=vmid, details=result.get("error", "Errore sconosciuto"))
         raise HTTPException(status_code=500, detail=result.get("error", "Errore durante il restore"))
+    
+    # Aggiorna log con successo
+    restore_log.status = "success"
+    restore_log.message = f"Restore VM {vmid} completato su {dest_node.name} (storage: {storage or 'default'})"
+    restore_log.completed_at = end_time
+    restore_log.duration = duration
+    db.commit()
     
     log_audit(db, user.id, "restore_completed", "restore",
               resource_id=vmid, details=f"Restore completato su {dest_node.name} come VM {vmid}")
@@ -1307,7 +1341,8 @@ async def direct_restore(
         "success": True,
         "message": f"Restore completato con successo",
         "vmid": vmid,
-        "node": dest_node.name
+        "node": dest_node.name,
+        "duration": duration
     }
 
 
