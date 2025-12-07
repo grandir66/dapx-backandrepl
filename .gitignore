@@ -4,3 +4,6 @@ __pycache__/
 *.pyc
 venv/
 .env
+config.env
+backend/config.env
+backend/certs/

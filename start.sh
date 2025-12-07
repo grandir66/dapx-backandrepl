@@ -19,6 +19,30 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$SCRIPT_DIR/backend"
 VENV_DIR="$BACKEND_DIR/venv"
 REQUIREMENTS="$BACKEND_DIR/requirements.txt"
+CONFIG_FILE="$BACKEND_DIR/config.env"
+
+# Carica configurazione da file se esiste
+load_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        echo -e "${BLUE}► Caricamento configurazione da config.env${NC}"
+        # Legge il file escludendo commenti e righe vuote
+        while IFS='=' read -r key value; do
+            # Salta commenti e righe vuote
+            [[ "$key" =~ ^#.*$ ]] && continue
+            [[ -z "$key" ]] && continue
+            # Rimuovi spazi
+            key=$(echo "$key" | tr -d ' ')
+            value=$(echo "$value" | tr -d ' ')
+            # Esporta solo se non già definito nell'ambiente
+            if [ -z "${!key}" ] && [ -n "$value" ]; then
+                export "$key=$value"
+            fi
+        done < "$CONFIG_FILE"
+    fi
+}
+
+# Carica config prima delle altre variabili
+load_config
 
 # Rileva sistema operativo
 detect_os() {
@@ -358,7 +382,14 @@ show_help() {
     echo "  --gen-cert      Genera solo certificato SSL senza avviare"
     echo "  --help, -h      Mostra questo messaggio"
     echo ""
-    echo "Variabili ambiente:"
+    echo "File di configurazione:"
+    echo "  backend/config.env    # Configurazione persistente (copia da config.env.example)"
+    echo ""
+    echo "  Per abilitare SSL permanentemente:"
+    echo "    cp backend/config.env.example backend/config.env"
+    echo "    # Modifica DAPX_SSL=true in config.env"
+    echo ""
+    echo "Variabili ambiente (sovrascrivono config.env):"
     echo "  DAPX_HOST       Host (default: 0.0.0.0)"
     echo "  DAPX_PORT       Porta (default: 8420)"
     echo "  DAPX_DB         Path database SQLite"
@@ -373,7 +404,7 @@ show_help() {
     echo ""
     echo "Esempi HTTPS:"
     echo "  $0 --ssl                    # Avvia con certificato auto-firmato"
-    echo "  DAPX_SSL_CERT=/path/to/cert.pem DAPX_SSL_KEY=/path/to/key.pem $0 --ssl"
+    echo "  DAPX_SSL=true $0            # Stessa cosa via variabile"
     echo ""
 }
 
