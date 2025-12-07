@@ -2712,10 +2712,67 @@
                                             <button class="btn btn-sm btn-secondary" @click="testPbsNode(node.id)">
                                                 Test
                                             </button>
+                                            <button class="btn btn-sm btn-primary" @click="browsePbsBackups(node.id)" style="margin-left: 4px;">
+                                                📂 Sfoglia
+                                            </button>
                                         </td>
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Browse PBS Backups Section -->
+                    <div v-if="pbsBrowseData.nodeId" style="margin-top: 24px; padding: 20px; background: var(--bg-tertiary); border-radius: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <h4 style="color: var(--accent-primary);">📂 Backup su {{ pbsBrowseData.nodeName }}</h4>
+                            <button class="btn btn-sm btn-secondary" @click="pbsBrowseData.nodeId = null">✕ Chiudi</button>
+                        </div>
+                        
+                        <div v-if="pbsBrowseData.loading" style="text-align: center; padding: 20px;">
+                            <span class="badge badge-warning">⏳ Caricamento backup...</span>
+                        </div>
+                        
+                        <div v-else-if="pbsBrowseData.backups.length === 0" style="text-align: center; padding: 20px; color: var(--text-secondary);">
+                            Nessun backup trovato sul datastore {{ pbsBrowseData.datastore }}
+                        </div>
+                        
+                        <div v-else>
+                            <p style="margin-bottom: 12px; color: var(--text-secondary);">
+                                Trovati <strong>{{ pbsBrowseData.backups.length }}</strong> backup sul datastore <strong>{{ pbsBrowseData.datastore }}</strong>
+                            </p>
+                            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>VM/CT</th>
+                                            <th>Tipo</th>
+                                            <th>Backup ID</th>
+                                            <th>Data</th>
+                                            <th>Azioni</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="backup in pbsBrowseData.backups" :key="backup['backup-id']">
+                                            <td>
+                                                <strong>{{ extractVmIdFromBackup(backup['backup-id']) }}</strong>
+                                            </td>
+                                            <td>
+                                                <span class="badge badge-info">{{ extractTypeFromBackup(backup['backup-id']) }}</span>
+                                            </td>
+                                            <td style="font-size: 0.85em; font-family: monospace;">
+                                                {{ backup['backup-id'] }}
+                                            </td>
+                                            <td>{{ formatBackupDate(backup['backup-id']) }}</td>
+                                            <td>
+                                                <button class="btn btn-sm btn-primary" @click="createRecoveryFromPbsBackup(backup)">
+                                                    🔄 Restore
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -4451,6 +4508,15 @@
                 const showAddRecoveryJobModal = ref(false);
                 const sourceVmsForRecovery = ref([]);
                 
+                // PBS Browse
+                const pbsBrowseData = ref({
+                    nodeId: null,
+                    nodeName: '',
+                    datastore: '',
+                    backups: [],
+                    loading: false
+                });
+                
                 // Backup Jobs
                 const backupJobs = ref([]);
                 const sourceVmsForBackup = ref([]);
@@ -5169,6 +5235,84 @@
                     } catch (e) {
                         showToast('Errore test PBS', 'error');
                     }
+                };
+                
+                // Browse PBS Backups
+                const browsePbsBackups = async (nodeId) => {
+                    const node = pbsNodes.value.find(n => n.id === nodeId);
+                    if (!node) return;
+                    
+                    pbsBrowseData.value = {
+                        nodeId: nodeId,
+                        nodeName: node.name,
+                        datastore: node.pbs_datastore || 'datastore1',
+                        backups: [],
+                        loading: true
+                    };
+                    
+                    try {
+                        const resp = await axios.get(`${API}/recovery-jobs/pbs-nodes/${nodeId}/backups`);
+                        pbsBrowseData.value.backups = resp.data.backups || [];
+                        pbsBrowseData.value.datastore = resp.data.datastore;
+                    } catch (e) {
+                        showToast('Errore caricamento backup da PBS', 'error');
+                        console.error(e);
+                    } finally {
+                        pbsBrowseData.value.loading = false;
+                    }
+                };
+                
+                const extractVmIdFromBackup = (backupId) => {
+                    // Format: "vm/100/2024-01-15T10:30:00Z" or "ct/101/..."
+                    const match = backupId.match(/(?:vm|ct)\/(\d+)\//);
+                    return match ? match[1] : backupId;
+                };
+                
+                const extractTypeFromBackup = (backupId) => {
+                    if (backupId.startsWith('vm/')) return 'QEMU';
+                    if (backupId.startsWith('ct/')) return 'LXC';
+                    return 'N/A';
+                };
+                
+                const formatBackupDate = (backupId) => {
+                    // Extract date from backup ID: "vm/100/2024-01-15T10:30:00Z"
+                    const match = backupId.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
+                    if (match) {
+                        const date = new Date(match[1]);
+                        return date.toLocaleString('it-IT');
+                    }
+                    return '-';
+                };
+                
+                const createRecoveryFromPbsBackup = (backup) => {
+                    // Pre-popola il form recovery con i dati del backup esistente
+                    const vmId = extractVmIdFromBackup(backup['backup-id']);
+                    const vmType = backup['backup-id'].startsWith('ct/') ? 'lxc' : 'qemu';
+                    
+                    newRecoveryJob.value = {
+                        name: `Restore-VM${vmId}`,
+                        source_node_id: '',  // Sarà selezionato dall'utente
+                        vm_id: parseInt(vmId),
+                        vm_type: vmType,
+                        vm_name: '',
+                        pbs_node_id: pbsBrowseData.value.nodeId,
+                        pbs_datastore: pbsBrowseData.value.datastore,
+                        pbs_storage_id: '',
+                        dest_node_id: '',
+                        dest_vm_id: null,
+                        dest_vm_name_suffix: '-restored',
+                        dest_storage: '',
+                        backup_mode: 'snapshot',
+                        backup_compress: 'zstd',
+                        restore_start_vm: false,
+                        restore_unique: true,
+                        overwrite_existing: true,
+                        schedule: '',
+                        is_active: false  // Disattivato per default per restore manuali
+                    };
+                    
+                    showAddRecoveryJobModal.value = true;
+                    showToast(`Configura il restore per VM ${vmId} dal backup PBS`, 'info');
                 };
                 
                 const getRecoveryJobStatus = (job) => {
@@ -6217,6 +6361,8 @@
                     // Recovery Jobs functions
                     loadRecoveryJobs, loadSourceVms, createRecoveryJob, runRecoveryJob, 
                     deleteRecoveryJob, editRecoveryJob, saveRecoveryJob, testPbsNode, getRecoveryJobStatus,
+                    // PBS Browse
+                    pbsBrowseData, browsePbsBackups, extractVmIdFromBackup, extractTypeFromBackup, formatBackupDate, createRecoveryFromPbsBackup,
                     destStorages, vmidCheckResult, loadDestStorages, checkDestVmid,
                     showEditRecoveryJobModal, editingRecoveryJob,
                     sourcePbsStorages, loadSourcePbsStorages,
