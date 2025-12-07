@@ -3336,7 +3336,7 @@
             
             <!-- MODAL RESTORE -->
             <div class="modal-overlay" v-if="showRestoreModal" @click.self="showRestoreModal = false">
-                <div class="modal">
+                <div class="modal" style="max-width: 550px;">
                     <div class="modal-header">
                         <h2>🔄 Restore VM/CT da PBS</h2>
                         <button class="modal-close" @click="showRestoreModal = false">&times;</button>
@@ -3344,31 +3344,51 @@
                     <div class="modal-body">
                         <div class="form-group">
                             <label class="form-label">Backup da ripristinare</label>
-                            <input type="text" class="form-input" :value="restoreData.backup_id" disabled>
+                            <input type="text" class="form-input" :value="restoreData.backup_id" disabled style="font-size: 0.85rem;">
                         </div>
                         <div class="form-group">
                             <label class="form-label">VM/CT Originale</label>
-                            <input type="text" class="form-input" :value="restoreData.vm_type?.toUpperCase() + ' #' + restoreData.vmid" disabled>
+                            <input type="text" class="form-input" :value="(restoreData.vm_name || '') + ' (' + restoreData.vm_type?.toUpperCase() + ' #' + restoreData.vmid + ')'" disabled>
                         </div>
+                        
+                        <hr style="border-color: var(--border-color); margin: 16px 0;">
+                        <h4 style="margin-bottom: 12px; color: var(--accent-primary);">📍 Destinazione</h4>
+                        
                         <div class="form-group">
                             <label class="form-label">Nodo Destinazione *</label>
-                            <select class="form-input" v-model="restoreData.dest_node_id" required>
+                            <select class="form-input" v-model="restoreData.dest_node_id" @change="loadRestoreStorages" required>
                                 <option value="">Seleziona nodo...</option>
                                 <option v-for="node in pveNodes" :key="node.id" :value="node.id">
-                                    {{ node.name }} ({{ node.host }})
+                                    {{ node.name }} ({{ node.hostname }})
                                 </option>
                             </select>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">VMID Destinazione *</label>
-                            <input type="number" class="form-input" v-model="restoreData.dest_vmid" placeholder="Lascia vuoto per ID automatico">
-                            <small style="color: #9ca3af;">Lascia vuoto per usare il prossimo ID disponibile</small>
+                        
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label">VMID Destinazione</label>
+                                <input type="number" class="form-input" v-model="restoreData.dest_vmid" placeholder="Auto">
+                                <small style="color: var(--text-secondary);">Vuoto = prossimo disponibile</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Nome VM</label>
+                                <input type="text" class="form-input" v-model="restoreData.dest_vm_name" :placeholder="restoreData.vm_name || 'nome-vm'">
+                                <small style="color: var(--text-secondary);">Vuoto = nome originale</small>
+                            </div>
                         </div>
+                        
                         <div class="form-group">
-                            <label class="form-label">Storage Destinazione</label>
-                            <input type="text" class="form-input" v-model="restoreData.dest_storage" placeholder="es: local-lvm, zfs-pool">
-                            <small style="color: #9ca3af;">Lascia vuoto per usare lo storage di default</small>
+                            <label class="form-label">Storage Destinazione *</label>
+                            <select class="form-input" v-model="restoreData.dest_storage" v-if="restoreStorages.length > 0">
+                                <option value="">Seleziona storage...</option>
+                                <option v-for="st in restoreStorages" :key="st.storage" :value="st.storage">
+                                    {{ st.storage }} ({{ st.type }}) - {{ formatSize(st.avail) }} liberi
+                                </option>
+                            </select>
+                            <input type="text" class="form-input" v-model="restoreData.dest_storage" v-else placeholder="es: local-lvm, zfs-pool">
+                            <small style="color: var(--text-secondary);" v-if="!restoreData.dest_node_id">Seleziona prima un nodo per vedere gli storage</small>
                         </div>
+                        
                         <div class="form-group">
                             <label class="form-check">
                                 <input type="checkbox" v-model="restoreData.start_after_restore">
@@ -3378,7 +3398,7 @@
                     </div>
                     <div class="modal-footer">
                         <button class="btn btn-secondary" @click="showRestoreModal = false">Annulla</button>
-                        <button class="btn btn-primary" @click="executeRestore" :disabled="!restoreData.dest_node_id">
+                        <button class="btn btn-primary" @click="executeRestore" :disabled="!restoreData.dest_node_id || !restoreData.dest_storage">
                             🔄 Esegui Restore
                         </button>
                     </div>
@@ -4834,13 +4854,16 @@
                 const restoreData = ref({
                     backup_id: '',
                     vmid: '',
+                    vm_name: '',
                     vm_type: 'qemu',
                     pbs_node_id: '',
                     dest_node_id: '',
                     dest_vmid: '',
+                    dest_vm_name: '',
                     dest_storage: '',
                     start_after_restore: false
                 });
+                const restoreStorages = ref([]);
                 
                 // Computed: raggruppa backup per VM/CT ID
                 const groupedRestoreBackups = computed(() => {
@@ -5287,17 +5310,36 @@
                 };
                 
                 const startRestore = (backup) => {
+                    restoreStorages.value = [];
                     restoreData.value = {
                         backup_id: backup.backup_id,
                         vmid: backup.vmid,
+                        vm_name: backup.vm_name || '',
                         vm_type: backup.vm_type || 'qemu',
                         pbs_node_id: selectedRestorePbs.value?.id,
                         dest_node_id: '',
                         dest_vmid: backup.vmid,
+                        dest_vm_name: backup.vm_name || '',
                         dest_storage: '',
                         start_after_restore: false
                     };
                     showRestoreModal.value = true;
+                };
+                
+                const loadRestoreStorages = async () => {
+                    if (!restoreData.value.dest_node_id) {
+                        restoreStorages.value = [];
+                        return;
+                    }
+                    try {
+                        const resp = await axios.get(`${API}/recovery-jobs/node/${restoreData.value.dest_node_id}/storages`);
+                        restoreStorages.value = (resp.data.storages || []).filter(s => 
+                            s.content && (s.content.includes('images') || s.content.includes('rootdir'))
+                        );
+                    } catch (e) {
+                        console.error('Errore caricamento storage:', e);
+                        restoreStorages.value = [];
+                    }
                 };
                 
                 const executeRestore = async () => {
@@ -6817,9 +6859,9 @@
                     backupJobs, sourceVmsForBackup, backupPbsStorages, newBackupJob, showEditBackupJobModal, editingBackupJob,
                     loadBackupJobs, loadSourceVmsForBackup, loadBackupPbsStorages, selectBackupVm, createBackupJob, runBackupJob, deleteBackupJob, editBackupJob, saveBackupJob,
                     // Restore from PBS
-                    selectedRestorePbs, restorePbsBackups, showRestoreModal, restoreData,
+                    selectedRestorePbs, restorePbsBackups, showRestoreModal, restoreData, restoreStorages,
                     expandedBackupGroups, groupedRestoreBackups, toggleBackupGroup,
-                    browseRestorePbs, startRestore, executeRestore,
+                    browseRestorePbs, startRestore, loadRestoreStorages, executeRestore,
                     settings, authSettings, notifSettings,
                     showNodeModal, showEditNodeModal, editingNode, showSyncJobModal, editingSyncJobId, showUserModal, editingUser, showInfoModal,
                     // SSH Keys
