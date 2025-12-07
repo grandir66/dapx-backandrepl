@@ -18,6 +18,7 @@ from database import (
     NodeType, RecoveryJobStatus
 )
 from services.pbs_service import pbs_service
+from services.proxmox_service import proxmox_service
 from services.ssh_service import ssh_service
 from routers.auth import get_current_user, require_operator, require_admin, log_audit
 
@@ -1032,22 +1033,19 @@ async def list_pbs_backups(
                         # Recupera i nomi delle VM/CT dal cluster
                         vm_names = {}
                         try:
-                            # Ottieni lista VM/CT dal cluster
-                            vm_result = await ssh_service.execute(
+                            # Ottieni lista VM/CT dal nodo PVE e usa nomi reali
+                            guests = await proxmox_service.get_all_guests(
                                 hostname=pve_node.hostname,
-                                command="pvesh get /cluster/resources --output-format json 2>/dev/null",
                                 port=pve_node.ssh_port,
                                 username=pve_node.ssh_user,
                                 key_path=pve_node.ssh_key_path
                             )
-                            if vm_result.success:
-                                vms = json.loads(vm_result.stdout)
-                                for vm in vms:
-                                    vmid = vm.get("vmid")
-                                    name = vm.get("name", "")
-                                    vm_type = "lxc" if vm.get("type") == "lxc" else "qemu"
-                                    if vmid:
-                                        vm_names[str(vmid)] = {"name": name, "type": vm_type}
+                            for vm in guests:
+                                vmid = vm.get("vmid")
+                                name = vm.get("name", "")
+                                vm_type = vm.get("type", "qemu")
+                                if isinstance(vmid, (int, str)):
+                                    vm_names[str(vmid)] = {"name": name, "type": vm_type}
                         except Exception as e:
                             logger.warning(f"Errore recupero nomi VM: {e}")
                         
