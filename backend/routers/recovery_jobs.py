@@ -1032,10 +1032,10 @@ async def list_pbs_backups(
                         # Recupera i nomi delle VM/CT dal cluster
                         vm_names = {}
                         try:
-                            # Ottieni lista VM (qemu)
+                            # Ottieni lista VM/CT dal cluster
                             vm_result = await ssh_service.execute(
                                 hostname=pve_node.hostname,
-                                command="pvesh get /cluster/resources --type vm --output-format json 2>/dev/null",
+                                command="pvesh get /cluster/resources --output-format json 2>/dev/null",
                                 port=pve_node.ssh_port,
                                 username=pve_node.ssh_user,
                                 key_path=pve_node.ssh_key_path
@@ -1047,7 +1047,7 @@ async def list_pbs_backups(
                                     name = vm.get("name", "")
                                     vm_type = "lxc" if vm.get("type") == "lxc" else "qemu"
                                     if vmid:
-                                        vm_names[vmid] = {"name": name, "type": vm_type}
+                                        vm_names[str(vmid)] = {"name": name, "type": vm_type}
                         except Exception as e:
                             logger.warning(f"Errore recupero nomi VM: {e}")
                         
@@ -1069,8 +1069,9 @@ async def list_pbs_backups(
                             
                             # Ottieni nome VM se disponibile
                             vm_name = ""
-                            if vmid in vm_names:
-                                vm_name = vm_names[vmid].get("name", "")
+                            vmid_key = str(vmid) if vmid is not None else ""
+                            if vmid_key in vm_names:
+                                vm_name = vm_names[vmid_key].get("name", "")
                             
                             # Filtra per VM ID se specificato
                             if vm_id and vmid != vm_id:
