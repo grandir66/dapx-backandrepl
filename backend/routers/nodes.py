@@ -41,6 +41,7 @@ class NodeCreate(BaseModel):
     # PBS specific
     pbs_datastore: Optional[str] = None
     pbs_fingerprint: Optional[str] = None
+    pbs_username: Optional[str] = "root@pam"
     pbs_password: Optional[str] = None
     # Storage type: zfs, btrfs (only for PVE nodes)
     storage_type: str = "zfs"
@@ -68,6 +69,7 @@ class NodeUpdate(BaseModel):
     # PBS specific
     pbs_datastore: Optional[str] = None
     pbs_fingerprint: Optional[str] = None
+    pbs_username: Optional[str] = None
     pbs_password: Optional[str] = None
     # Storage type
     storage_type: Optional[str] = None
@@ -90,6 +92,8 @@ class NodeResponse(BaseModel):
     is_auth_node: bool
     # PBS specific
     pbs_datastore: Optional[str] = None
+    pbs_fingerprint: Optional[str] = None
+    pbs_username: Optional[str] = None
     pbs_available: Optional[bool] = False
     pbs_version: Optional[str] = None
     # Storage

@@ -4153,9 +4153,16 @@
                             <label class="form-label">Fingerprint SSL (opzionale)</label>
                             <input type="text" class="form-input" v-model="newNode.pbs_fingerprint" placeholder="aa:bb:cc:dd:...">
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">Password API (opzionale)</label>
-                            <input type="password" class="form-input" v-model="newNode.pbs_password" placeholder="Per accesso API PBS">
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label">👤 Utente PBS</label>
+                                <input type="text" class="form-input" v-model="newNode.pbs_username" placeholder="root@pam">
+                                <small style="color: var(--text-secondary);">es: root@pam, backup@pbs</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">🔑 Password PBS</label>
+                                <input type="password" class="form-input" v-model="newNode.pbs_password" placeholder="Password utente">
+                            </div>
                         </div>
                     </div>
                     
@@ -4251,11 +4258,20 @@
                             <input type="text" class="form-input" v-model="editingNode.pbs_fingerprint" placeholder="aa:bb:cc:dd:...">
                             <small style="color: var(--text-secondary);">Fingerprint del certificato PBS per connessioni sicure</small>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">🔑 Password API PBS</label>
-                            <input type="password" class="form-input" v-model="editingNode.pbs_password" placeholder="Password utente root@pam">
-                            <small style="color: var(--text-secondary);">Necessaria per registrazione automatica storage PBS su altri nodi</small>
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label">👤 Utente PBS</label>
+                                <input type="text" class="form-input" v-model="editingNode.pbs_username" placeholder="root@pam">
+                                <small style="color: var(--text-secondary);">es: root@pam, backup@pbs</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">🔑 Password PBS</label>
+                                <input type="password" class="form-input" v-model="editingNode.pbs_password" placeholder="Password utente">
+                            </div>
                         </div>
+                        <small style="color: var(--text-secondary); display: block; margin-top: 8px;">
+                            Credenziali necessarie per registrazione automatica storage PBS su altri nodi
+                        </small>
                     </div>
                     
                     <!-- PVE Config -->
@@ -4759,6 +4775,7 @@
                     // PBS specific
                     pbs_datastore: 'datastore1',
                     pbs_fingerprint: '',
+                    pbs_username: 'root@pam',
                     pbs_password: '',
                     // BTRFS support (only for PVE nodes)
                     storage_type: 'zfs',
@@ -6075,6 +6092,7 @@
                             node_type: 'pve',
                             pbs_datastore: 'datastore1',
                             pbs_fingerprint: '',
+                            pbs_username: 'root@pam',
                             pbs_password: '',
                             storage_type: 'zfs',
                             btrfs_mount: '/mnt/btrfs-storage',
@@ -6108,6 +6126,7 @@
                             btrfs_snapshot_dir: editingNode.value.btrfs_snapshot_dir,
                             pbs_datastore: editingNode.value.pbs_datastore,
                             pbs_fingerprint: editingNode.value.pbs_fingerprint,
+                            pbs_username: editingNode.value.pbs_username,
                             pbs_password: editingNode.value.pbs_password,
                             notes: editingNode.value.notes
                         };

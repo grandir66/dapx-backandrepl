@@ -76,20 +76,21 @@ async def _ensure_pbs_storage_registered(
         return wanted_storage
 
     repo = datastore or pbs_node.pbs_datastore or "datastore1"
-    env_prefix = ""
-    if pbs_node.pbs_password:
-        env_prefix = f"PBS_PASSWORD='{pbs_node.pbs_password}' "
 
+    # Usa pbs_username se configurato, altrimenti fallback a ssh_user@pam
+    pbs_user = pbs_node.pbs_username or f"{pbs_node.ssh_user}@pam"
     cmd_parts = [
         "pvesm", "add", "pbs", wanted_storage,
         "--server", pbs_node.hostname,
         "--datastore", repo,
-        "--username", f"{pbs_node.ssh_user}@pam"
+        "--username", pbs_user
     ]
     if pbs_node.pbs_fingerprint:
         cmd_parts.extend(["--fingerprint", pbs_node.pbs_fingerprint])
+    if pbs_node.pbs_password:
+        cmd_parts.extend(["--password", f"'{pbs_node.pbs_password}'"])
 
-    cmd = env_prefix + " ".join(cmd_parts) + " 2>&1"
+    cmd = " ".join(cmd_parts) + " 2>&1"
     result = await ssh_service.execute(
         hostname=node.hostname,
         command=cmd,
@@ -381,7 +382,7 @@ async def execute_recovery_job_task(job_id: int, triggered_by: Optional[int] = N
             vm_id=job.vm_id,
             pbs_hostname=pbs_node.hostname,
             datastore=datastore,
-            pbs_user=f"{pbs_node.ssh_user}@pam",
+            pbs_user=pbs_node.pbs_username or f"{pbs_node.ssh_user}@pam",
             pbs_password=pbs_node.pbs_password,
             pbs_fingerprint=pbs_node.pbs_fingerprint,
             pbs_storage_id=job.pbs_storage_id,
@@ -512,7 +513,7 @@ async def execute_recovery_job_task(job_id: int, triggered_by: Optional[int] = N
             pbs_hostname=pbs_node.hostname,
             datastore=datastore,
             backup_id=backup_id,
-            pbs_user=f"{pbs_node.ssh_user}@pam",
+            pbs_user=pbs_node.pbs_username or f"{pbs_node.ssh_user}@pam",
             pbs_password=pbs_node.pbs_password,
             pbs_fingerprint=pbs_node.pbs_fingerprint,
             pbs_storage_id=job.pbs_storage_id,
@@ -879,7 +880,7 @@ async def run_backup_only(
         vm_id=job.vm_id,
         pbs_hostname=pbs_node.hostname,
         datastore=datastore,
-        pbs_user=f"{pbs_node.ssh_user}@pam",
+        pbs_user=pbs_node.pbs_username or f"{pbs_node.ssh_user}@pam",
         pbs_password=pbs_node.pbs_password,
         pbs_fingerprint=pbs_node.pbs_fingerprint,
         pbs_storage_id=job.pbs_storage_id,  # Usa storage esistente se specificato
@@ -928,7 +929,7 @@ async def run_restore_only(
         pbs_hostname=pbs_node.hostname,
         datastore=datastore,
         backup_id=backup_id or job.last_backup_id,
-        pbs_user=f"{pbs_node.ssh_user}@pam",
+        pbs_user=pbs_node.pbs_username or f"{pbs_node.ssh_user}@pam",
         pbs_password=pbs_node.pbs_password,
         pbs_fingerprint=pbs_node.pbs_fingerprint,
         dest_vm_id=job.dest_vm_id,
@@ -1074,7 +1075,7 @@ async def list_pbs_backups(
         backups = await pbs_service.list_backups(
             pbs_hostname=node.hostname,
             datastore=ds,
-            pbs_user=f"{node.ssh_user}@pam",
+            pbs_user=node.pbs_username or f"{node.ssh_user}@pam",
             pbs_password=node.pbs_password,
             pbs_fingerprint=node.pbs_fingerprint,
             vm_id=vm_id,
@@ -1258,7 +1259,7 @@ async def direct_restore(
         pbs_hostname=pbs_node.hostname,
         datastore=datastore,
         backup_id=request.backup_id,
-        pbs_user=f"{pbs_node.ssh_user}@pam",
+        pbs_user=pbs_node.pbs_username or f"{pbs_node.ssh_user}@pam",
         pbs_password=pbs_node.pbs_password,
         pbs_fingerprint=pbs_node.pbs_fingerprint,
         dest_vm_id=vmid,

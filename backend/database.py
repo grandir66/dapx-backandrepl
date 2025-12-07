@@ -259,7 +259,8 @@ class Node(Base):
     # PBS Specific (quando node_type == 'pbs')
     pbs_datastore = Column(String(100), nullable=True)  # Nome datastore PBS
     pbs_fingerprint = Column(String(255), nullable=True)  # Fingerprint SSL PBS
-    pbs_password = Column(String(500), nullable=True)  # Password API PBS (encrypted)
+    pbs_username = Column(String(100), nullable=True, default="root@pam")  # Utente PBS (es: root@pam, backup@pbs)
+    pbs_password = Column(String(500), nullable=True)  # Password API PBS
     
     # Storage type support (per PVE)
     storage_type = Column(String(20), default=StorageType.ZFS.value)  # zfs, btrfs
