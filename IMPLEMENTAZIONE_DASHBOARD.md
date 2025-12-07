@@ -450,3 +450,4 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 7. ⚠️ Aggiungere background job per aggiornamento dati
 8. ⚠️ Aggiungere grafici (Chart.js o simile) per visualizzazioni
 
+

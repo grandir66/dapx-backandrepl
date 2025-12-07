@@ -2255,14 +2255,13 @@
                                 <input type="number" class="form-input" v-model="vmReplicaWizard.destVmId" :placeholder="vmReplicaWizard.selectedVM?.vmid">
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Schedule (cron)</label>
-                                <select class="form-input" v-model="vmReplicaWizard.schedule">
-                                    <option value="">Manuale</option>
-                                    <option value="0 */4 * * *">Ogni 4 ore</option>
-                                    <option value="0 2 * * *">Ogni notte alle 2:00</option>
-                                    <option value="*/30 * * * *">Ogni 30 minuti</option>
-                                    <option value="0 0 * * 0">Ogni domenica</option>
+                                <label class="form-label">Schedule</label>
+                                <select class="form-input" v-model="vmReplicaWizard.schedulePreset" @change="onSchedulePresetChange(vmReplicaWizard)">
+                                    <option v-for="preset in schedulePresets" :key="preset.value" :value="preset.value">
+                                        {{ preset.label }}
+                                    </option>
                                 </select>
+                                <input v-if="vmReplicaWizard.schedulePreset === 'custom'" type="text" class="form-input" v-model="vmReplicaWizard.schedule" placeholder="es: 0 2 * * *" style="margin-top: 8px;">
                             </div>
                         </div>
                         
@@ -2283,6 +2282,24 @@
                                     <input type="checkbox" v-model="vmReplicaWizard.registerVM">
                                     Registra VM su destinazione dopo replica
                                 </label>
+                            </div>
+                        </div>
+                        
+                        <!-- Notifiche -->
+                        <h4 style="margin: 20px 0 12px; color: var(--accent-info);">📧 Notifiche</h4>
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label">Invio Email</label>
+                                <select class="form-input" v-model="vmReplicaWizard.notify_mode">
+                                    <option value="daily">📅 Solo nel riepilogo giornaliero</option>
+                                    <option value="always">📨 Ad ogni esecuzione</option>
+                                    <option value="failure">⚠️ Solo in caso di errore</option>
+                                    <option value="never">🔕 Disabilitate</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Soggetto Email</label>
+                                <input type="text" class="form-input" v-model="vmReplicaWizard.notify_subject" placeholder="[REPLICA] {vm_name}">
                             </div>
                         </div>
                         
@@ -2485,13 +2502,12 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label">Schedule</label>
-                            <select class="form-input" v-model="newBackupJob.schedule">
-                                <option value="">Manuale</option>
-                                <option value="0 2 * * *">Ogni notte alle 2:00</option>
-                                <option value="0 3 * * 0">Ogni domenica alle 3:00</option>
-                                <option value="0 */6 * * *">Ogni 6 ore</option>
-                                <option value="0 */12 * * *">Ogni 12 ore</option>
+                            <select class="form-input" v-model="newBackupJob.schedulePreset" @change="onSchedulePresetChange(newBackupJob)">
+                                <option v-for="preset in schedulePresets" :key="preset.value" :value="preset.value">
+                                    {{ preset.label }}
+                                </option>
                             </select>
+                            <input v-if="newBackupJob.schedulePreset === 'custom'" type="text" class="form-input" v-model="newBackupJob.schedule" placeholder="es: 0 2 * * * (cron)" style="margin-top: 8px;">
                         </div>
                     </div>
                     <div class="grid-3">
@@ -2506,6 +2522,21 @@
                                 <option value="lzo">LZO (Veloce)</option>
                                 <option value="gzip">GZIP</option>
                                 <option value="none">Nessuna</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Soggetto Email</label>
+                            <input type="text" class="form-input" v-model="newBackupJob.notify_subject" placeholder="[BACKUP] {vm_name}">
+                        </div>
+                    </div>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label class="form-label">Notifiche Email</label>
+                            <select class="form-input" v-model="newBackupJob.notify_mode">
+                                <option value="daily">📅 Solo nel riepilogo giornaliero</option>
+                                <option value="always">📨 Ad ogni esecuzione</option>
+                                <option value="failure">⚠️ Solo in caso di errore</option>
+                                <option value="never">🔕 Disabilitate</option>
                             </select>
                         </div>
                         <div class="form-group" style="display: flex; align-items: flex-end;">
@@ -2618,13 +2649,27 @@
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Schedule</label>
-                                <select class="form-input" v-model="editingBackupJob.schedule">
-                                    <option value="">Manuale</option>
-                                    <option value="0 2 * * *">Ogni notte alle 2:00</option>
-                                    <option value="0 3 * * 0">Ogni domenica alle 3:00</option>
-                                    <option value="0 */6 * * *">Ogni 6 ore</option>
-                                    <option value="0 */12 * * *">Ogni 12 ore</option>
+                                <select class="form-input" v-model="editingBackupJob.schedulePreset" @change="onSchedulePresetChange(editingBackupJob)">
+                                    <option v-for="preset in schedulePresets" :key="preset.value" :value="preset.value">
+                                        {{ preset.label }}
+                                    </option>
                                 </select>
+                                <input v-if="editingBackupJob.schedulePreset === 'custom'" type="text" class="form-input" v-model="editingBackupJob.schedule" placeholder="cron" style="margin-top: 8px;">
+                            </div>
+                        </div>
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label">📧 Notifiche Email</label>
+                                <select class="form-input" v-model="editingBackupJob.notify_mode">
+                                    <option value="daily">📅 Solo nel riepilogo giornaliero</option>
+                                    <option value="always">📨 Ad ogni esecuzione</option>
+                                    <option value="failure">⚠️ Solo in caso di errore</option>
+                                    <option value="never">🔕 Disabilitate</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Soggetto Email</label>
+                                <input type="text" class="form-input" v-model="editingBackupJob.notify_subject" placeholder="[BACKUP] {vm_name}">
                             </div>
                         </div>
                         <div class="form-group">
@@ -3046,9 +3091,30 @@
                             </div>
                         </div>
                         
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label">⏰ Schedule</label>
+                                <select class="form-input" v-model="newRecoveryJob.schedulePreset" @change="onSchedulePresetChange(newRecoveryJob)">
+                                    <option v-for="preset in schedulePresets" :key="preset.value" :value="preset.value">
+                                        {{ preset.label }}
+                                    </option>
+                                </select>
+                                <input v-if="newRecoveryJob.schedulePreset === 'custom'" type="text" class="form-input" v-model="newRecoveryJob.schedule" placeholder="es: 0 2 * * *" style="margin-top: 8px;">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">📧 Notifiche Email</label>
+                                <select class="form-input" v-model="newRecoveryJob.notify_mode">
+                                    <option value="daily">📅 Solo nel riepilogo giornaliero</option>
+                                    <option value="always">📨 Ad ogni esecuzione</option>
+                                    <option value="failure">⚠️ Solo in caso di errore</option>
+                                    <option value="never">🔕 Disabilitate</option>
+                                </select>
+                            </div>
+                        </div>
+                        
                         <div class="form-group">
-                            <label class="form-label">⏰ Schedule (Cron format, lascia vuoto per manuale)</label>
-                            <input type="text" class="form-input" v-model="newRecoveryJob.schedule" placeholder="es: 0 2 * * * (ogni giorno alle 2:00)">
+                            <label class="form-label">Soggetto Email</label>
+                            <input type="text" class="form-input" v-model="newRecoveryJob.notify_subject" placeholder="[REPLICA PBS] {vm_name}">
                         </div>
                         
                         <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 16px;">
@@ -3060,16 +3126,6 @@
                                 <input type="checkbox" v-model="newRecoveryJob.overwrite_existing">
                                 Sovrascrivi se esiste
                             </label>
-                        </div>
-                        
-                        <div class="form-group" style="margin-top: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
-                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                                <input type="checkbox" v-model="newRecoveryJob.notify_on_each_run">
-                                <span><strong>🔔 Notifica ad ogni esecuzione</strong></span>
-                            </label>
-                            <small style="display: block; margin-top: 8px; color: var(--text-secondary); margin-left: 24px;">
-                                Se disabilitato, riceverai notifiche solo nel report giornaliero. Se abilitato, riceverai una notifica per ogni esecuzione (successo o fallimento).
-                            </small>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -3168,33 +3224,35 @@
                                 </label>
                             </div>
                             
-                            <div class="form-group" style="margin-top: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
-                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                                    <input type="checkbox" v-model="editingRecoveryJob.notify_on_each_run">
-                                    <span><strong>🔔 Notifica ad ogni esecuzione</strong></span>
-                                </label>
-                                <small style="display: block; margin-top: 8px; color: var(--text-secondary); margin-left: 24px;">
-                                    Se disabilitato, riceverai notifiche solo nel report giornaliero. Se abilitato, riceverai una notifica per ogni esecuzione (successo o fallimento).
-                                </small>
-                            </div>
                         </div>
                         
-                        <!-- Scheduling -->
+                        <!-- Scheduling & Notifiche -->
                         <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 8px; margin-bottom: 16px;">
-                            <h4 style="margin-bottom: 12px; color: var(--text-secondary);">⏰ Scheduling</h4>
+                            <h4 style="margin-bottom: 12px; color: var(--text-secondary);">⏰ Scheduling & Notifiche</h4>
                             <div class="grid-2">
                                 <div class="form-group">
                                     <label class="form-label">Schedule</label>
-                                    <select class="form-input" v-model="editingRecoveryJob.schedule">
-                                        <option value="">Manuale</option>
-                                        <option value="*/30 * * * *">Ogni 30 minuti</option>
-                                        <option value="0 */2 * * *">Ogni 2 ore</option>
-                                        <option value="0 */4 * * *">Ogni 4 ore</option>
-                                        <option value="0 */6 * * *">Ogni 6 ore</option>
-                                        <option value="0 */12 * * *">Ogni 12 ore</option>
-                                        <option value="0 2 * * *">Ogni notte alle 2:00</option>
-                                        <option value="0 0 * * 0">Ogni domenica</option>
+                                    <select class="form-input" v-model="editingRecoveryJob.schedulePreset" @change="onSchedulePresetChange(editingRecoveryJob)">
+                                        <option v-for="preset in schedulePresets" :key="preset.value" :value="preset.value">
+                                            {{ preset.label }}
+                                        </option>
                                     </select>
+                                    <input v-if="editingRecoveryJob.schedulePreset === 'custom'" type="text" class="form-input" v-model="editingRecoveryJob.schedule" placeholder="es: 0 2 * * *" style="margin-top: 8px;">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">📧 Notifiche Email</label>
+                                    <select class="form-input" v-model="editingRecoveryJob.notify_mode">
+                                        <option value="daily">📅 Solo nel riepilogo giornaliero</option>
+                                        <option value="always">📨 Ad ogni esecuzione</option>
+                                        <option value="failure">⚠️ Solo in caso di errore</option>
+                                        <option value="never">🔕 Disabilitate</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="grid-2">
+                                <div class="form-group">
+                                    <label class="form-label">Soggetto Email</label>
+                                    <input type="text" class="form-input" v-model="editingRecoveryJob.notify_subject" placeholder="[REPLICA PBS] {vm_name}">
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label">Stato Job</label>
@@ -4481,23 +4539,15 @@
                     
                     <div class="grid-2">
                         <div class="form-group">
-                            <label class="form-label">Schedule (cron)</label>
-                            <select class="form-input" v-model="selectedSchedule" @change="applySchedule">
-                                <option value="">Manuale</option>
-                                <option value="*/30 * * * *">Ogni 30 minuti</option>
-                                <option value="0 * * * *">Ogni ora</option>
-                                <option value="0 */4 * * *">Ogni 4 ore</option>
-                                <option value="0 */6 * * *">Ogni 6 ore</option>
-                                <option value="0 */12 * * *">Ogni 12 ore</option>
-                                <option value="0 2 * * *">Ogni notte alle 2:00</option>
-                                <option value="custom">Personalizzato...</option>
+                            <label class="form-label">Schedule</label>
+                            <select class="form-input" v-model="newSyncJob.schedulePreset" @change="onSchedulePresetChange(newSyncJob)">
+                                <option v-for="preset in schedulePresets" :key="preset.value" :value="preset.value">
+                                    {{ preset.label }}
+                                </option>
                             </select>
+                            <input v-if="newSyncJob.schedulePreset === 'custom'" type="text" class="form-input" v-model="newSyncJob.schedule" placeholder="es: 0 2 * * *" style="margin-top: 8px;">
                         </div>
-                        <div class="form-group" v-if="selectedSchedule === 'custom'">
-                            <label class="form-label">Cron Expression</label>
-                            <input type="text" class="form-input" v-model="newSyncJob.schedule" placeholder="0 */4 * * *">
-                        </div>
-                        <div class="form-group" v-else>
+                        <div class="form-group">
                             <label class="form-label">Compressione</label>
                             <select class="form-input" v-model="newSyncJob.compress">
                                 <option value="none">Nessuna</option>
@@ -4508,11 +4558,27 @@
                         </div>
                     </div>
                     
+                    <div class="grid-2">
                         <div class="form-group">
-                            <label class="form-label">
-                            <input type="checkbox" v-model="newSyncJob.recursive"> Ricorsivo (include sotto-dataset)
-                            </label>
+                            <label class="form-label">📧 Notifiche Email</label>
+                            <select class="form-input" v-model="newSyncJob.notify_mode">
+                                <option value="daily">📅 Solo nel riepilogo giornaliero</option>
+                                <option value="always">📨 Ad ogni esecuzione</option>
+                                <option value="failure">⚠️ Solo in caso di errore</option>
+                                <option value="never">🔕 Disabilitate</option>
+                            </select>
                         </div>
+                        <div class="form-group">
+                            <label class="form-label">Soggetto Email</label>
+                            <input type="text" class="form-input" v-model="newSyncJob.notify_subject" placeholder="[REPLICA ZFS] {vm_name}">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">
+                            <input type="checkbox" v-model="newSyncJob.recursive"> Ricorsivo (include sotto-dataset)
+                        </label>
+                    </div>
                     
                     <hr style="border-color: var(--border-color); margin: 20px 0;">
                     
@@ -4761,6 +4827,20 @@
                 const setupForm = ref({ username: '', email: '', password: '', full_name: '' });
                 const loginError = ref('');
                 
+                // Schedule presets per job
+                const schedulePresets = [
+                    { value: '', label: '⏸️ Manuale (disattivato)', cron: '' },
+                    { value: '*/30 * * * *', label: '⏱️ Ogni 30 minuti', cron: '*/30 * * * *' },
+                    { value: '0 * * * *', label: '⏱️ Ogni ora', cron: '0 * * * *' },
+                    { value: '0 */2 * * *', label: '⏱️ Ogni 2 ore', cron: '0 */2 * * *' },
+                    { value: '0 */4 * * *', label: '⏱️ Ogni 4 ore', cron: '0 */4 * * *' },
+                    { value: '0 */6 * * *', label: '⏱️ Ogni 6 ore', cron: '0 */6 * * *' },
+                    { value: '0 */12 * * *', label: '⏱️ Ogni 12 ore', cron: '0 */12 * * *' },
+                    { value: '0 2 * * *', label: '🌙 Ogni giorno alle 2:00', cron: '0 2 * * *' },
+                    { value: '0 2 * * 0', label: '📅 Ogni domenica alle 2:00', cron: '0 2 * * 0' },
+                    { value: 'custom', label: '✏️ Personalizzato...', cron: '' }
+                ];
+                
                 // App state
                 const currentPage = ref('dashboard');
                 const settingsTab = ref('general');
@@ -4900,12 +4980,15 @@
                     dest_node_id: '', 
                     dest_dataset: '', 
                     schedule: '', 
+                    schedulePreset: '',
                     compress: 'lz4', 
                     recursive: false, 
                     register_vm: false, 
                     vm_id: '', 
                     dest_vm_id: '', 
                     vm_type: 'qemu',
+                    notify_mode: 'daily',
+                    notify_subject: '',
                     // BTRFS support
                     sync_method: 'syncoid',
                     btrfs_snapshot_dir: '',
@@ -5001,6 +5084,9 @@
                     backup_compress: 'zstd',
                     keep_last: 3,
                     schedule: '',
+                    schedulePreset: '',
+                    notify_mode: 'daily',
+                    notify_subject: '',
                     is_active: true
                 });
                 const newRecoveryJob = ref({
@@ -5022,7 +5108,9 @@
                     restore_unique: true,
                     overwrite_existing: true,
                     schedule: '',
-                    notify_on_each_run: false
+                    schedulePreset: '',
+                    notify_mode: 'daily',
+                    notify_subject: ''
                 });
                 const selectedSchedule = ref('');
                 const destRootPool = ref('');
@@ -5043,8 +5131,11 @@
                     destStorage: '',  // Nome storage Proxmox destinazione
                     destVmId: '',
                     schedule: '',
+                    schedulePreset: '',
                     compress: 'lz4',
                     registerVM: true,
+                    notify_mode: 'daily',
+                    notify_subject: '',
                     // BTRFS support
                     syncMethod: 'syncoid',  // syncoid | btrfs_send
                     btrfsMount: '/mnt/btrfs-storage',
@@ -5123,6 +5214,30 @@
                 };
                 
                 const formatDate = d => d ? new Date(d).toLocaleString('it-IT') : '-';
+                
+                const formatSchedule = (cron) => {
+                    if (!cron) return 'Manuale';
+                    const preset = schedulePresets.find(p => p.value === cron);
+                    if (preset) return preset.label.replace(/^[^\s]+\s/, '');
+                    return cron;
+                };
+                
+                const onSchedulePresetChange = (obj) => {
+                    if (obj.schedulePreset === 'custom') {
+                        // Mantieni il valore corrente o imposta vuoto
+                        if (!obj.schedule) obj.schedule = '';
+                    } else if (obj.schedulePreset === '') {
+                        obj.schedule = '';
+                    } else {
+                        obj.schedule = obj.schedulePreset;
+                    }
+                };
+                
+                const getSchedulePreset = (schedule) => {
+                    if (!schedule) return '';
+                    const preset = schedulePresets.find(p => p.value === schedule);
+                    return preset ? preset.value : 'custom';
+                };
                 
                 const formatUptime = (seconds) => {
                     if (!seconds) return 'N/A';
@@ -5324,7 +5439,8 @@
                         newBackupJob.value = {
                             name: '', source_node_id: '', vm_id: '', vm_type: 'qemu', vm_name: '',
                             pbs_node_id: '', backup_mode: 'snapshot', backup_compress: 'zstd',
-                            keep_last: 3, schedule: '', is_active: true
+                            keep_last: 3, schedule: '', schedulePreset: '', 
+                            notify_mode: 'daily', notify_subject: '', is_active: true
                         };
                     } catch (e) {
                         showToast(e.response?.data?.detail || 'Errore creazione backup job', 'error');
@@ -5353,7 +5469,12 @@
                 };
                 
                 const editBackupJob = (job) => {
-                    editingBackupJob.value = { ...job };
+                    editingBackupJob.value = { 
+                        ...job,
+                        schedulePreset: getSchedulePreset(job.schedule),
+                        notify_mode: job.notify_mode || 'daily',
+                        notify_subject: job.notify_subject || ''
+                    };
                     showEditBackupJobModal.value = true;
                 };
                 
@@ -5365,6 +5486,8 @@
                             backup_compress: editingBackupJob.value.backup_compress,
                             keep_last: editingBackupJob.value.keep_last,
                             schedule: editingBackupJob.value.schedule || null,
+                            notify_mode: editingBackupJob.value.notify_mode || 'daily',
+                            notify_subject: editingBackupJob.value.notify_subject || null,
                             is_active: editingBackupJob.value.is_active
                         };
                         await axios.put(`${API}/backup-jobs/${editingBackupJob.value.id}`, payload);
@@ -5721,8 +5844,8 @@
                             name: '', source_node_id: '', vm_id: '', vm_type: 'qemu', vm_name: '',
                             pbs_node_id: '', pbs_datastore: '', dest_node_id: '', dest_vm_id: '', dest_vm_name_suffix: '',
                             dest_storage: '', backup_mode: 'snapshot', backup_compress: 'zstd',
-                            restore_start_vm: false, restore_unique: true, overwrite_existing: true, schedule: '',
-                            notify_on_each_run: false
+                            restore_start_vm: false, restore_unique: true, overwrite_existing: true, 
+                            schedule: '', schedulePreset: '', notify_mode: 'daily', notify_subject: ''
                         };
                     } catch (e) {
                         showToast(e.response?.data?.detail || 'Errore creazione job', 'error');
@@ -5775,7 +5898,12 @@
                 
                 const editRecoveryJob = (job) => {
                     // Copia il job per la modifica
-                    editingRecoveryJob.value = { ...job };
+                    editingRecoveryJob.value = { 
+                        ...job,
+                        schedulePreset: getSchedulePreset(job.schedule),
+                        notify_mode: job.notify_mode || 'daily',
+                        notify_subject: job.notify_subject || ''
+                    };
                     showEditRecoveryJobModal.value = true;
                 };
                 
@@ -5798,7 +5926,8 @@
                             overwrite_existing: editingRecoveryJob.value.overwrite_existing,
                             schedule: editingRecoveryJob.value.schedule || null,
                             is_active: editingRecoveryJob.value.is_active,
-                            notify_on_each_run: editingRecoveryJob.value.notify_on_each_run || false
+                            notify_mode: editingRecoveryJob.value.notify_mode || 'daily',
+                            notify_subject: editingRecoveryJob.value.notify_subject || null
                         };
                         
                         await axios.put(`${API}/recovery-jobs/${editingRecoveryJob.value.id}`, payload);
@@ -5895,7 +6024,8 @@
                         restore_start_vm: false,
                         restore_unique: true,
                         overwrite_existing: true,
-                        schedule: '',
+                        schedule: '', schedulePreset: '',
+                        notify_mode: 'daily', notify_subject: '',
                         is_active: false  // Disattivato per default per restore manuali
                     };
                     
@@ -6400,7 +6530,7 @@
                         }
                         showSyncJobModal.value = false;
                         editingSyncJobId.value = null;
-                        newSyncJob.value = { name: '', source_node_id: '', source_dataset: '', dest_node_id: '', dest_dataset: '', schedule: '', compress: 'lz4', recursive: false, mbuffer_size: '128M', no_sync_snap: false, force_delete: false, extra_args: '', register_vm: false, vm_id: '', dest_vm_id: '', vm_type: 'qemu' };
+                        newSyncJob.value = { name: '', source_node_id: '', source_dataset: '', dest_node_id: '', dest_dataset: '', schedule: '', schedulePreset: '', compress: 'lz4', recursive: false, mbuffer_size: '128M', no_sync_snap: false, force_delete: false, extra_args: '', register_vm: false, vm_id: '', dest_vm_id: '', vm_type: 'qemu', notify_mode: 'daily', notify_subject: '' };
                         sourceDatasets.value = [];
                         destDatasets.value = [];
                         selectedSchedule.value = '';
@@ -6426,6 +6556,7 @@
                         dest_node_id: job.dest_node_id,
                         dest_dataset: job.dest_dataset,
                         schedule: job.schedule || '',
+                        schedulePreset: getSchedulePreset(job.schedule),
                         compress: job.compress || 'lz4',
                         recursive: job.recursive || false,
                         mbuffer_size: job.mbuffer_size || '128M',
@@ -6435,7 +6566,9 @@
                         register_vm: job.register_vm || false,
                         vm_id: job.vm_id || '',
                         dest_vm_id: job.dest_vm_id || '',
-                        vm_type: job.vm_type || 'qemu'
+                        vm_type: job.vm_type || 'qemu',
+                        notify_mode: job.notify_mode || 'daily',
+                        notify_subject: job.notify_subject || ''
                     };
                     await loadSourceDatasets();
                     await loadDestDatasets();
@@ -6840,7 +6973,8 @@
                         backup_mode: 'snapshot',
                         backup_compress: 'zstd',
                         keep_last: 3,
-                        schedule: '',
+                        schedule: '', schedulePreset: '',
+                        notify_mode: 'daily', notify_subject: '',
                         is_active: true
                     };
                     
@@ -6871,7 +7005,8 @@
                         restore_start_vm: false,
                         restore_unique: true,
                         overwrite_existing: true,
-                        schedule: '',
+                        schedule: '', schedulePreset: '',
+                        notify_mode: 'daily', notify_subject: '',
                         is_active: true
                     };
                     currentPage.value = 'recovery';
@@ -7038,6 +7173,8 @@
                     dashboardOverview, dashboardNodes, dashboardVMs, dashboardDataFromCache,
                     selectedNodeDetail, selectedVMDetail, loadingNodeDetail, loadingVMDetail,
                     newNode, newSyncJob, newUser,
+                    // Schedule presets
+                    schedulePresets, formatSchedule, onSchedulePresetChange, getSchedulePreset,
                     isAdmin, canEdit,
                     showToast, formatDate, formatUptime, formatSize, getStatusClass,
                     doSetup, doLogin, doLogout,

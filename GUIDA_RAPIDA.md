@@ -237,3 +237,4 @@ ssh root@<SOURCE> "syncoid --compress=lz4 <source> root@<dest>:<dest>"
 
 *Ultimo aggiornamento: v3.3.0*
 
+

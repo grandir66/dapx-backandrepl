@@ -289,3 +289,4 @@ GET /api/logs/?job_id=1&job_type=restore
 *Documento generato il: 2024-12-06*  
 *Versione progetto: 3.3.0+*
 
+
