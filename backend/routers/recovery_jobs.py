@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 import asyncio
 import logging
 import re
+import json
 
 from database import (
     get_db, Node, RecoveryJob, JobLog, User, 
@@ -931,10 +932,18 @@ async def list_pbs_backups(
     node_id: int,
     vm_id: Optional[int] = None,
     datastore: Optional[str] = None,
+    pve_node_id: Optional[int] = None,
+    pbs_storage: Optional[str] = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Lista i backup disponibili su un nodo PBS"""
+    """
+    Lista i backup disponibili su un nodo PBS.
+    
+    Metodo 1: Se PBS ha password configurata, usa proxmox-backup-client
+    Metodo 2: Se specificato pve_node_id e pbs_storage, usa pvesh sul nodo PVE
+    Metodo 3: Cerca automaticamente uno storage PBS su un nodo PVE collegato
+    """
     node = db.query(Node).filter(
         Node.id == node_id,
         Node.node_type == NodeType.PBS.value
@@ -944,23 +953,109 @@ async def list_pbs_backups(
         raise HTTPException(status_code=404, detail="Nodo PBS non trovato")
     
     ds = datastore or node.pbs_datastore or "datastore1"
+    backups = []
     
-    backups = await pbs_service.list_backups(
-        pbs_hostname=node.hostname,
-        datastore=ds,
-        pbs_user=f"{node.ssh_user}@pam",
-        pbs_password=node.pbs_password,
-        pbs_fingerprint=node.pbs_fingerprint,
-        vm_id=vm_id,
-        from_node_hostname=node.hostname,
-        from_node_port=node.ssh_port,
-        from_node_user=node.ssh_user,
-        from_node_key=node.ssh_key_path
-    )
+    # Metodo 1: Usa proxmox-backup-client se password disponibile
+    if node.pbs_password:
+        backups = await pbs_service.list_backups(
+            pbs_hostname=node.hostname,
+            datastore=ds,
+            pbs_user=f"{node.ssh_user}@pam",
+            pbs_password=node.pbs_password,
+            pbs_fingerprint=node.pbs_fingerprint,
+            vm_id=vm_id,
+            from_node_hostname=node.hostname,
+            from_node_port=node.ssh_port,
+            from_node_user=node.ssh_user,
+            from_node_key=node.ssh_key_path
+        )
+    else:
+        # Metodo 2/3: Usa pvesh tramite nodo PVE con storage PBS configurato
+        pve_node = None
+        storage_name = pbs_storage
+        
+        if pve_node_id:
+            pve_node = db.query(Node).filter(
+                Node.id == pve_node_id,
+                Node.node_type == NodeType.PVE.value
+            ).first()
+        else:
+            # Cerca un nodo PVE qualsiasi
+            pve_node = db.query(Node).filter(
+                Node.node_type == NodeType.PVE.value
+            ).first()
+        
+        if pve_node:
+            # Se non specificato, cerca lo storage PBS sul nodo
+            if not storage_name:
+                # Lista storage e trova quello PBS
+                result = await ssh_service.execute(
+                    hostname=pve_node.hostname,
+                    command="pvesm status --output-format json 2>/dev/null",
+                    port=pve_node.ssh_port,
+                    username=pve_node.ssh_user,
+                    key_path=pve_node.ssh_key_path
+                )
+                if result.success:
+                    try:
+                        storages = json.loads(result.stdout)
+                        for st in storages:
+                            if st.get("type") == "pbs" and st.get("active"):
+                                storage_name = st.get("storage")
+                                break
+                    except:
+                        pass
+            
+            if storage_name:
+                # Usa pvesh per listare i backup
+                hostname = pve_node.pve_node_name or pve_node.hostname.split('.')[0]
+                cmd = f"pvesh get /nodes/{hostname}/storage/{storage_name}/content --output-format json 2>/dev/null"
+                
+                result = await ssh_service.execute(
+                    hostname=pve_node.hostname,
+                    command=cmd,
+                    port=pve_node.ssh_port,
+                    username=pve_node.ssh_user,
+                    key_path=pve_node.ssh_key_path
+                )
+                
+                if result.success and result.stdout.strip():
+                    try:
+                        all_backups = json.loads(result.stdout)
+                        for backup in all_backups:
+                            # Converti formato PVE a formato standard
+                            volid = backup.get("volid", "")
+                            vmid = backup.get("vmid")
+                            ctime = backup.get("ctime", 0)
+                            size = backup.get("size", 0)
+                            
+                            # Estrai tipo e backup_id dal volid
+                            # Formato: PBS-BACK:backup/ct/101/2025-11-19T22:26:27Z
+                            vm_type = "qemu"
+                            backup_id = volid
+                            if "/ct/" in volid:
+                                vm_type = "lxc"
+                            
+                            # Filtra per VM ID se specificato
+                            if vm_id and vmid != vm_id:
+                                continue
+                            
+                            backups.append({
+                                "backup-id": backup_id,
+                                "backup_id": backup_id,
+                                "vmid": vmid,
+                                "vm_type": vm_type,
+                                "backup_time": ctime,
+                                "size": size,
+                                "volid": volid
+                            })
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Failed to parse pvesh backup list: {e}")
     
     return {
         "datastore": ds,
-        "backups": backups
+        "backups": backups,
+        "count": len(backups)
     }
 
 
