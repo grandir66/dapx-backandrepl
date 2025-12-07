@@ -83,13 +83,13 @@ async def _ensure_pbs_storage_registered(
     cmd_parts = [
         "pvesm", "add", "pbs", wanted_storage,
         "--server", pbs_node.hostname,
-        "--repository", repo,
+        "--datastore", repo,
         "--username", f"{pbs_node.ssh_user}@pam"
     ]
     if pbs_node.pbs_fingerprint:
         cmd_parts.extend(["--fingerprint", pbs_node.pbs_fingerprint])
 
-    cmd = env_prefix + " ".join(cmd_parts) + " 2>/dev/null"
+    cmd = env_prefix + " ".join(cmd_parts) + " 2>&1"
     result = await ssh_service.execute(
         hostname=node.hostname,
         command=cmd,
