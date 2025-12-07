@@ -2006,6 +2006,7 @@
                                         <td><span v-if="node.is_auth_node" class="badge badge-info">🔐</span></td>
                                         <td>
                                             <button class="btn btn-secondary btn-sm" @click="testNode(node)" :disabled="loading">Test</button>
+                                            <button class="btn btn-sm" style="background: #3b82f6;" @click="editNode(node)" :disabled="loading" v-if="canEdit">✏️ Modifica</button>
                                             <button v-if="node.node_type !== 'pbs'" class="btn btn-secondary btn-sm" @click="refreshNodeDatasets(node)" :disabled="loading">Refresh</button>
                                             <button v-if="node.node_type !== 'pbs' && node.storage_type !== 'btrfs' && !node.sanoid_installed && canEdit" class="btn btn-primary btn-sm" @click="installSanoid(node)" :disabled="loading">Sanoid</button>
                                             <button v-if="currentUser?.role === 'admin'" class="btn btn-danger btn-sm" @click="deleteNode(node)" :disabled="loading">Elimina</button>
@@ -4190,6 +4191,108 @@
             </div>
         </div>
         
+        <!-- Modal Modifica Nodo -->
+        <div class="modal-overlay" v-if="isAuthenticated && showEditNodeModal" @click.self="showEditNodeModal = false">
+            <div class="modal" style="max-width: 600px;">
+                <div class="modal-header">
+                    <h3 class="modal-title">✏️ Modifica Nodo: {{ editingNode?.name }}</h3>
+                    <button class="btn btn-icon" @click="showEditNodeModal = false">✕</button>
+                </div>
+                <div class="modal-body" v-if="editingNode">
+                    <!-- Tipo Nodo (readonly) -->
+                    <div class="form-group">
+                        <label class="form-label">Tipo Nodo</label>
+                        <input type="text" class="form-input" :value="editingNode.node_type === 'pbs' ? '🗄️ PBS' : '🖥️ PVE'" disabled>
+                    </div>
+                    
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label class="form-label">Nome</label>
+                            <input type="text" class="form-input" v-model="editingNode.name">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Hostname/IP</label>
+                            <input type="text" class="form-input" v-model="editingNode.hostname">
+                        </div>
+                    </div>
+                    
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label class="form-label">Porta SSH</label>
+                            <input type="number" class="form-input" v-model="editingNode.ssh_port">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Utente SSH</label>
+                            <input type="text" class="form-input" v-model="editingNode.ssh_user">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Attivo</label>
+                            <select class="form-input" v-model="editingNode.is_active">
+                                <option :value="true">✅ Attivo</option>
+                                <option :value="false">⏸️ Disattivato</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Path Chiave SSH</label>
+                        <input type="text" class="form-input" v-model="editingNode.ssh_key_path">
+                    </div>
+                    
+                    <!-- PBS Config -->
+                    <div v-if="editingNode.node_type === 'pbs'" style="background: rgba(156, 39, 176, 0.1); padding: 16px; border-radius: 8px; margin-top: 16px; border: 1px solid rgba(156, 39, 176, 0.3);">
+                        <h4 style="color: #ce93d8; margin-bottom: 12px;">🗄️ Configurazione PBS</h4>
+                        <div class="form-group">
+                            <label class="form-label">Datastore</label>
+                            <input type="text" class="form-input" v-model="editingNode.pbs_datastore" placeholder="datastore1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Fingerprint SSL</label>
+                            <input type="text" class="form-input" v-model="editingNode.pbs_fingerprint" placeholder="aa:bb:cc:dd:...">
+                            <small style="color: var(--text-secondary);">Fingerprint del certificato PBS per connessioni sicure</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">🔑 Password API PBS</label>
+                            <input type="password" class="form-input" v-model="editingNode.pbs_password" placeholder="Password utente root@pam">
+                            <small style="color: var(--text-secondary);">Necessaria per registrazione automatica storage PBS su altri nodi</small>
+                        </div>
+                    </div>
+                    
+                    <!-- PVE Config -->
+                    <div v-if="editingNode.node_type === 'pve'">
+                        <div class="form-group" style="margin-top: 16px;">
+                            <label class="form-label">📦 Tipo Storage</label>
+                            <select class="form-input" v-model="editingNode.storage_type">
+                                <option value="zfs">ZFS (Sanoid/Syncoid)</option>
+                                <option value="btrfs">BTRFS</option>
+                            </select>
+                        </div>
+                        
+                        <div v-if="editingNode.storage_type === 'btrfs'" style="background: rgba(255, 159, 67, 0.1); padding: 16px; border-radius: 8px; margin-top: 12px;">
+                            <h4 style="color: #ff9f43; margin-bottom: 12px;">📦 Configurazione BTRFS</h4>
+                            <div class="form-group">
+                                <label class="form-label">Mount Point</label>
+                                <input type="text" class="form-input" v-model="editingNode.btrfs_mount" placeholder="/mnt/btrfs-storage">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Directory Snapshot</label>
+                                <input type="text" class="form-input" v-model="editingNode.btrfs_snapshot_dir" placeholder=".snapshots">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group" style="margin-top: 16px;">
+                        <label class="form-label">Note</label>
+                        <textarea class="form-input" v-model="editingNode.notes" rows="2" placeholder="Note opzionali sul nodo..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showEditNodeModal = false">Annulla</button>
+                    <button class="btn btn-primary" @click="saveNode" :disabled="loading">💾 Salva Modifiche</button>
+                </div>
+            </div>
+        </div>
+        
         <div class="modal-overlay" v-if="isAuthenticated && showSyncJobModal" @click.self="showSyncJobModal = false">
             <div class="modal" style="max-width: 700px;">
                 <div class="modal-header">
@@ -4589,6 +4692,8 @@
                 
                 // Modals
                 const showNodeModal = ref(false);
+                const showEditNodeModal = ref(false);
+                const editingNode = ref(null);
                 const showSyncJobModal = ref(false);
                 const editingSyncJobId = ref(null);
                 const showUserModal = ref(false);
@@ -5982,6 +6087,41 @@
                     loading.value = false;
                 };
                 
+                const editNode = (node) => {
+                    editingNode.value = { ...node };
+                    showEditNodeModal.value = true;
+                };
+                
+                const saveNode = async () => {
+                    if (!editingNode.value) return;
+                    loading.value = true;
+                    try {
+                        const payload = {
+                            name: editingNode.value.name,
+                            hostname: editingNode.value.hostname,
+                            ssh_port: editingNode.value.ssh_port,
+                            ssh_user: editingNode.value.ssh_user,
+                            ssh_key_path: editingNode.value.ssh_key_path,
+                            is_active: editingNode.value.is_active,
+                            storage_type: editingNode.value.storage_type,
+                            btrfs_mount: editingNode.value.btrfs_mount,
+                            btrfs_snapshot_dir: editingNode.value.btrfs_snapshot_dir,
+                            pbs_datastore: editingNode.value.pbs_datastore,
+                            pbs_fingerprint: editingNode.value.pbs_fingerprint,
+                            pbs_password: editingNode.value.pbs_password,
+                            notes: editingNode.value.notes
+                        };
+                        await axios.put(`${API}/nodes/${editingNode.value.id}`, payload);
+                        showToast('Nodo aggiornato!', 'success');
+                        showEditNodeModal.value = false;
+                        editingNode.value = null;
+                        await loadNodes();
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore salvataggio', 'error');
+                    }
+                    loading.value = false;
+                };
+                
                 const testNode = async (node) => {
                     loading.value = true;
                     try {
@@ -6662,7 +6802,7 @@
                     expandedBackupGroups, groupedRestoreBackups, toggleBackupGroup,
                     browseRestorePbs, startRestore, executeRestore,
                     settings, authSettings, notifSettings,
-                    showNodeModal, showSyncJobModal, editingSyncJobId, showUserModal, editingUser, showInfoModal,
+                    showNodeModal, showEditNodeModal, editingNode, showSyncJobModal, editingSyncJobId, showUserModal, editingUser, showInfoModal,
                     // SSH Keys
                     sshKeyInfo, sshTestResults, showDistributeModal, distributePassword, selectedNodesForDistribute, distributeResults,
                     showPasswordPrompt, sshPassword, pendingDistributeNodeId, retryDistributeWithPassword,
@@ -6686,7 +6826,7 @@
                     runVMGroup, deleteVMGroup, registerVMGroup,
                     // Snapshot functions
                     showGroupSnapshots, refreshSnapshots,
-                    createNode, testNode, installSanoid, deleteNode, refreshNodeDatasets,
+                    createNode, editNode, saveNode, testNode, installSanoid, deleteNode, refreshNodeDatasets,
                     updateDatasetConfig, applySanoidConfig,
                     createSyncJob, runSyncJob, toggleSyncJob, deleteSyncJob, editSyncJob, registerJobVM,
                     getVmDatasets,
