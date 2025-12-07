@@ -4736,7 +4736,9 @@
                     }
                     try {
                         const resp = await axios.get(`${API}/nodes/${newBackupJob.value.source_node_id}/vms`);
-                        sourceVmsForBackup.value = resp.data.vms || [];
+                        // L'API restituisce direttamente la lista o un oggetto con 'vms'
+                        sourceVmsForBackup.value = Array.isArray(resp.data) ? resp.data : (resp.data.vms || []);
+                        console.log('VM caricate per backup:', sourceVmsForBackup.value);
                     } catch (e) {
                         console.error('Errore caricamento VM:', e);
                         sourceVmsForBackup.value = [];
@@ -4744,10 +4746,13 @@
                 };
                 
                 const selectBackupVm = () => {
-                    const vm = sourceVmsForBackup.value.find(v => v.vmid == newBackupJob.value.vm_id);
+                    const vmId = parseInt(newBackupJob.value.vm_id);
+                    const vm = sourceVmsForBackup.value.find(v => parseInt(v.vmid) === vmId);
+                    console.log('selectBackupVm:', vmId, vm);
                     if (vm) {
                         newBackupJob.value.vm_type = vm.type || 'qemu';
                         newBackupJob.value.vm_name = vm.name || '';
+                        console.log('VM name set to:', newBackupJob.value.vm_name);
                     }
                 };
                 
