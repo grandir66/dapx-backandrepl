@@ -99,9 +99,11 @@ async def _ensure_pbs_storage_registered(
     )
 
     if not result.success:
-        logger.error(f"Comando pvesm add output (stdout/stderr):\n{result.stdout}\n{result.stderr}")
+        stdout = (result.stdout or "").strip()
+        stderr = (result.stderr or "").strip()
+        logger.error(f"Comando pvesm add output (stdout/stderr):\n{stdout}\n{stderr}")
         raise Exception(
-            f"Registrazione storage PBS '{wanted_storage}' fallita su {node.name}: {result.stderr or result.stdout or 'Errore sconosciuto'}"
+            f"Registrazione storage PBS '{wanted_storage}' fallita su {node.name}: cmd=\"{cmd}\" stdout=\"{stdout}\" stderr=\"{stderr or 'Errore sconosciuto'}\""
         )
 
     return wanted_storage
