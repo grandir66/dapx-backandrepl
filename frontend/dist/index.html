@@ -717,14 +717,10 @@
             <!-- Login Form -->
             <div v-else class="login-container">
                 <div class="login-logo">
-                    <div class="login-logo-icon">
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7c-2 0-3 1-3 3z"/>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6M12 9v6"/>
-                        </svg>
-                    </div>
+                    <img src="https://da-sns.domarc.it/static/images/company-logo-pos.png" alt="Domarc" style="max-width: 180px; margin-bottom: 20px;" onerror="this.style.display='none'">
                     <h1>DAPX-backandrepl</h1>
                     <p style="color: var(--text-secondary); margin-top: 8px;">Backup & Replica per Proxmox</p>
+                    <p style="color: var(--text-muted); margin-top: 4px; font-size: 0.85em;">v3.3.0</p>
                 </div>
                 
                 <div v-if="loginError" class="login-error">{{ loginError }}</div>
@@ -762,16 +758,12 @@
         <template v-else>
         <!-- Sidebar -->
         <aside class="sidebar">
-            <div class="logo">
-                <h1>
-                    <div class="logo-icon">
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke: #0a0e14">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7c-2 0-3 1-3 3z"/>
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6M12 9v6"/>
-                        </svg>
-                    </div>
-                    DAPX
+            <div class="logo" style="text-align: center;">
+                <img src="https://da-sns.domarc.it/static/images/company-logo-pos.png" alt="Domarc" style="max-width: 120px; margin-bottom: 8px;" onerror="this.style.display='none'">
+                <h1 style="font-size: 1.2rem; margin-top: 4px;">
+                    DAPX-backandrepl
                 </h1>
+                <small style="color: var(--text-secondary); font-size: 0.75rem;">v3.3.0</small>
             </div>
                 
             <nav class="nav-menu">
@@ -782,6 +774,12 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"/>
                     </svg>
                     Dashboard
+                </div>
+                <div class="nav-item" :class="{ active: currentPage === 'proxmox' }" @click="currentPage = 'proxmox'">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                    </svg>
+                    Proxmox
                 </div>
                 <div class="nav-item" :class="{ active: currentPage === 'nodes' }" @click="currentPage = 'nodes'">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -810,7 +808,7 @@
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                     </svg>
-                    Recovery (PBS)
+                    Replica (PBS)
                 </div>
                 <div class="nav-item" :class="{ active: currentPage === 'vms' }" @click="currentPage = 'vms'">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -847,6 +845,12 @@
                     </svg>
                     Impostazioni
                         </div>
+                <div class="nav-item" @click="showInfoModal = true">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Info
+                </div>
                 </div>
             </nav>
                 
@@ -869,11 +873,214 @@
             <!-- Dashboard -->
             <div v-if="currentPage === 'dashboard'">
                 <div class="page-header">
-                    <h1 class="page-title">📊 Dashboard Panoramica</h1>
+                    <h1 class="page-title">📊 Dashboard Principale</h1>
+                    <p class="page-subtitle">Riepilogo job di replica, backup e log</p>
+                </div>
+                
+                <!-- Summary Stats -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Job Sincronia</div>
+                        <div class="stat-value">{{ syncJobs.length }}</div>
+                        <div class="stat-detail">Attivi: {{ syncJobs.filter(j => j.is_active).length }}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Recovery Jobs</div>
+                        <div class="stat-value">{{ recoveryJobs.length }}</div>
+                        <div class="stat-detail">Attivi: {{ recoveryJobs.filter(j => j.is_active).length }}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Nodi</div>
+                        <div class="stat-value">{{ nodes.length }}</div>
+                        <div class="stat-detail">
+                            <a href="#" @click.prevent="currentPage = 'proxmox'" style="color: var(--accent-primary);">Vai a Proxmox →</a>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Log Recenti</div>
+                        <div class="stat-value">{{ recentLogs.length }}</div>
+                        <div class="stat-detail">Ultimi 50</div>
+                    </div>
+                </div>
+                
+                <!-- Sync Jobs Summary -->
+                <div class="card" style="margin-top: 24px;">
+                    <div class="card-header">
+                        <h3 class="card-title">🔄 Job di Sincronia</h3>
+                        <button class="btn btn-sm btn-secondary" @click="currentPage = 'sync'">Vedi tutti →</button>
+                    </div>
+                    <div class="card-body">
+                        <div v-if="syncJobs.length === 0" style="color: var(--text-secondary); text-align: center; padding: 20px;">
+                            Nessun job di sincronia configurato
+                        </div>
+                        <div v-else class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Nome</th>
+                                        <th>Sorgente</th>
+                                        <th>Destinazione</th>
+                                        <th>Stato</th>
+                                        <th>Ultima Esecuzione</th>
+                                        <th>Prossima Esecuzione</th>
+                                        <th>Azioni</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="job in syncJobs.slice(0, 5)" :key="job.id">
+                                        <td><strong>{{ job.name }}</strong></td>
+                                        <td>{{ getNodeName(job.source_node_id) }}</td>
+                                        <td>{{ getNodeName(job.dest_node_id) }}</td>
+                                        <td>
+                                            <span class="badge" :class="getStatusClass(job.last_status)">
+                                                {{ job.last_status || 'N/A' }}
+                                            </span>
+                                            <span v-if="!job.is_active" class="badge badge-secondary" style="margin-left: 4px;">Pausa</span>
+                                        </td>
+                                        <td>
+                                            <span v-if="job.last_run">{{ formatDate(job.last_run) }}</span>
+                                            <span v-else style="color: var(--text-secondary);">Mai</span>
+                                        </td>
+                                        <td>
+                                            <span v-if="job.schedule && job.is_active" style="font-family: monospace; font-size: 0.9em;">{{ job.schedule }}</span>
+                                            <span v-else style="color: var(--text-secondary);">-</span>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-primary btn-sm" @click="runSyncJob(job)" :disabled="loading" title="Esegui">▶</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div v-if="syncJobs.length > 5" style="text-align: center; padding: 12px; color: var(--text-secondary);">
+                                <button class="btn btn-sm btn-secondary" @click="currentPage = 'sync'">Vedi tutti i {{ syncJobs.length }} job →</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Recovery Jobs Summary -->
+                <div class="card" style="margin-top: 24px;">
+                    <div class="card-header">
+                        <h3 class="card-title">💾 Recovery Jobs (PBS)</h3>
+                        <button class="btn btn-sm btn-secondary" @click="currentPage = 'recovery'">Vedi tutti →</button>
+                    </div>
+                    <div class="card-body">
+                        <div v-if="recoveryJobs.length === 0" style="color: var(--text-secondary); text-align: center; padding: 20px;">
+                            Nessun recovery job configurato
+                        </div>
+                        <div v-else class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Nome</th>
+                                        <th>VM</th>
+                                        <th>Destinazione</th>
+                                        <th>Stato</th>
+                                        <th>Ultima Esecuzione</th>
+                                        <th>Prossima Esecuzione</th>
+                                        <th>Azioni</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="job in recoveryJobs.slice(0, 5)" :key="job.id">
+                                        <td><strong>{{ job.name }}</strong></td>
+                                        <td>
+                                            <span v-if="job.vm_name">{{ job.vm_type?.toUpperCase() }} #{{ job.vm_id }} - {{ job.vm_name }}</span>
+                                            <span v-else>{{ job.vm_type?.toUpperCase() }} #{{ job.vm_id }}</span>
+                                        </td>
+                                        <td>{{ getNodeName(job.dest_node_id) }}</td>
+                                        <td>
+                                            <span class="badge" :class="getStatusClass(job.last_status)">
+                                                {{ job.last_status || 'N/A' }}
+                                            </span>
+                                            <span v-if="!job.is_active" class="badge badge-secondary" style="margin-left: 4px;">Pausa</span>
+                                        </td>
+                                        <td>
+                                            <span v-if="job.last_run">{{ formatDate(job.last_run) }}</span>
+                                            <span v-else style="color: var(--text-secondary);">Mai</span>
+                                        </td>
+                                        <td>
+                                            <span v-if="job.schedule && job.is_active" style="font-family: monospace; font-size: 0.9em;">{{ job.schedule }}</span>
+                                            <span v-else style="color: var(--text-secondary);">-</span>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-primary btn-sm" @click="runRecoveryJob(job.id)" :disabled="loading" title="Esegui">▶</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div v-if="recoveryJobs.length > 5" style="text-align: center; padding: 12px; color: var(--text-secondary);">
+                                <button class="btn btn-sm btn-secondary" @click="currentPage = 'recovery'">Vedi tutti i {{ recoveryJobs.length }} job →</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Recent Logs -->
+                <div class="card" style="margin-top: 24px;">
+                    <div class="card-header">
+                        <h3 class="card-title">📋 Log Recenti</h3>
+                        <button class="btn btn-sm btn-secondary" @click="currentPage = 'logs'">Vedi tutti →</button>
+                    </div>
+                    <div class="card-body">
+                        <div v-if="recentLogs.length === 0" style="color: var(--text-secondary); text-align: center; padding: 20px;">
+                            Nessun log disponibile
+                        </div>
+                        <div v-else class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Data/Ora</th>
+                                        <th>Job</th>
+                                        <th>Tipo</th>
+                                        <th>Stato</th>
+                                        <th>Durata</th>
+                                        <th>Azioni</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="log in recentLogs.slice(0, 10)" :key="log.id">
+                                        <td>{{ formatDate(log.started_at) }}</td>
+                                        <td><strong>{{ log.job_name || 'N/A' }}</strong></td>
+                                        <td>
+                                            <span class="badge badge-info">{{ log.job_type || 'N/A' }}</span>
+                                        </td>
+                                        <td>
+                                            <span class="badge" :class="getStatusClass(log.status)">
+                                                {{ log.status || 'N/A' }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span v-if="log.duration">{{ Math.round(log.duration / 60) }}m {{ log.duration % 60 }}s</span>
+                                            <span v-else style="color: var(--text-secondary);">-</span>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-secondary btn-sm" @click="showLogDetail(log)">Dettagli</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div v-if="recentLogs.length > 10" style="text-align: center; padding: 12px; color: var(--text-secondary);">
+                                <button class="btn btn-sm btn-secondary" @click="currentPage = 'logs'">Vedi tutti i log →</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Proxmox Dashboard (Host & VM) -->
+            <div v-if="currentPage === 'proxmox'">
+                <div class="page-header">
+                    <h1 class="page-title">🖥️ Dashboard Proxmox</h1>
                     <p class="page-subtitle">Panoramica completa dei nodi Proxmox e delle VM</p>
-                    <button class="btn btn-secondary btn-sm" @click="loadDashboard" :disabled="loading" style="margin-top: 12px;">
-                        🔄 Aggiorna
-                    </button>
+                    <div style="display: flex; align-items: center; gap: 12px; margin-top: 12px;">
+                        <button class="btn btn-secondary btn-sm" @click="loadDashboard(true)" :disabled="loading">
+                            🔄 Aggiorna Dati
+                        </button>
+                        <span v-if="dashboardDataFromCache" style="color: var(--text-secondary); font-size: 0.9em;">
+                            📦 Dati in cache
+                        </span>
+                    </div>
                 </div>
                 
                 <!-- Overview Stats -->
@@ -905,7 +1112,7 @@
                 </div>
                 
                 <div v-else-if="loading" style="text-align: center; padding: 40px; color: var(--text-secondary);">
-                    ⏳ Caricamento dati dashboard...
+                    ⏳ Caricamento dati...
                 </div>
                 
                 <!-- Tabella Nodi -->
@@ -953,7 +1160,7 @@
                                         <span v-else style="color: var(--text-secondary);">N/A</span>
                                     </td>
                                     <td>
-                                        <div v-if="node.storage_total_gb">
+                                        <div v-if="node.storage_total_gb && node.storage_total_gb > 0">
                                             <div>{{ formatSize(node.storage_total_gb * 1024 * 1024 * 1024) }}</div>
                                             <div style="font-size: 0.85em; color: var(--text-secondary);">
                                                 Usato: {{ formatSize((node.storage_used_gb || 0) * 1024 * 1024 * 1024) }}
@@ -962,9 +1169,9 @@
                                         <span v-else style="color: var(--text-secondary);">N/A</span>
                                     </td>
                                     <td>
-                                        <span v-if="node.vm_count !== undefined">
-                                            {{ node.vm_count || 0 }} 
-                                            <span v-if="node.running_vm_count" style="color: var(--accent-primary);">
+                                        <span v-if="node.vm_count !== undefined && node.vm_count !== null">
+                                            {{ node.vm_count }} 
+                                            <span v-if="node.running_vm_count && node.running_vm_count > 0" style="color: var(--accent-primary);">
                                                 ({{ node.running_vm_count }} running)
                                             </span>
                                         </span>
@@ -1006,6 +1213,11 @@
                                     <th>Nodo</th>
                                     <th>Tipo</th>
                                     <th>Stato</th>
+                                    <th>CPU</th>
+                                    <th>RAM</th>
+                                    <th>Storage</th>
+                                    <th>Uptime</th>
+                                    <th>IP</th>
                                     <th>Azioni</th>
                                 </tr>
                             </thead>
@@ -1023,15 +1235,671 @@
                                         </span>
                                     </td>
                                     <td>
+                                        <span v-if="vm.cpu_cores">{{ vm.cpu_cores }} cores</span>
+                                        <span v-else style="color: var(--text-secondary);">-</span>
+                                    </td>
+                                    <td>
+                                        <span v-if="vm.memory_gb">{{ vm.memory_gb }} GB</span>
+                                        <span v-else style="color: var(--text-secondary);">-</span>
+                                    </td>
+                                    <td>
+                                        <span v-if="vm.disk_size">{{ formatSize(vm.disk_size) }}</span>
+                                        <span v-else style="color: var(--text-secondary);">-</span>
+                                    </td>
+                                    <td>
+                                        <span v-if="vm.uptime_seconds">{{ formatUptime(vm.uptime_seconds) }}</span>
+                                        <span v-else style="color: var(--text-secondary);">-</span>
+                                    </td>
+                                    <td>
+                                        <span v-if="vm.primary_ip" style="font-family: monospace; font-size: 0.9em;">{{ vm.primary_ip }}</span>
+                                        <span v-else style="color: var(--text-secondary);">-</span>
+                                    </td>
+                                    <td>
                                         <button class="btn btn-secondary btn-sm" @click="viewVMDetails(vm.node_id, vm.vmid, vm.type)">Dettagli</button>
                                     </td>
                                 </tr>
                                 <tr v-if="dashboardVMs.length === 0 && !loading">
-                                    <td colspan="6" style="text-align: center; color: var(--text-secondary);">Nessuna VM trovata</td>
+                                    <td colspan="11" style="text-align: center; color: var(--text-secondary);">Nessuna VM trovata</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+            
+            <!-- Node Details Page -->
+            <div v-if="currentPage === 'node-details'">
+                <div class="page-header">
+                    <button class="btn btn-secondary btn-sm" @click="currentPage = 'proxmox'" style="margin-bottom: 12px;">
+                        ← Torna a Proxmox
+                    <h1 class="page-title">🖥️ Dettagli Nodo</h1>
+                    <p class="page-subtitle" v-if="selectedNodeDetail">{{ selectedNodeDetail.node_name }} ({{ selectedNodeDetail.hostname }})</p>
+                </div>
+                
+                <div v-if="loadingNodeDetail" style="text-align: center; padding: 40px; color: var(--text-secondary);">
+                    ⏳ Caricamento dettagli nodo...
+                </div>
+                
+                <div v-else-if="selectedNodeDetail">
+                    <!-- Overview Card -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">📊 Panoramica</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-card">
+                                    <div class="stat-label">Hostname</div>
+                                    <div class="stat-value" style="font-size: 1.2em;">{{ selectedNodeDetail.hostname }}</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Versione Proxmox</div>
+                                    <div class="stat-value" style="font-size: 1.2em;">{{ selectedNodeDetail.proxmox_version || 'N/A' }}</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Kernel</div>
+                                    <div class="stat-value" style="font-size: 1.2em;">{{ selectedNodeDetail.kernel_version || 'N/A' }}</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Uptime</div>
+                                    <div class="stat-value" style="font-size: 1.2em;">{{ formatUptime(selectedNodeDetail.uptime_seconds) }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- CPU Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedNodeDetail.cpu">
+                        <div class="card-header">
+                            <h3 class="card-title">⚙️ CPU</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-card">
+                                    <div class="stat-label">Cores</div>
+                                    <div class="stat-value">{{ selectedNodeDetail.cpu.cores || 'N/A' }}</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Model</div>
+                                    <div class="stat-value" style="font-size: 0.9em;">{{ selectedNodeDetail.cpu.model || 'N/A' }}</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Frequenza</div>
+                                    <div class="stat-value">{{ selectedNodeDetail.cpu.frequency_mhz ? selectedNodeDetail.cpu.frequency_mhz + ' MHz' : 'N/A' }}</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Utilizzo</div>
+                                    <div class="stat-value">{{ selectedNodeDetail.cpu.usage_percent ? selectedNodeDetail.cpu.usage_percent + '%' : 'N/A' }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Memory Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedNodeDetail.memory">
+                        <div class="card-header">
+                            <h3 class="card-title">💾 Memoria</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-card">
+                                    <div class="stat-label">Totale</div>
+                                    <div class="stat-value">{{ formatSize((selectedNodeDetail.memory.total_gb || 0) * 1024 * 1024 * 1024) }}</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Usata</div>
+                                    <div class="stat-value">{{ formatSize((selectedNodeDetail.memory.used_gb || 0) * 1024 * 1024 * 1024) }}</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Disponibile</div>
+                                    <div class="stat-value">{{ formatSize((selectedNodeDetail.memory.available_gb || 0) * 1024 * 1024 * 1024) }}</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Utilizzo</div>
+                                    <div class="stat-value">{{ selectedNodeDetail.memory.usage_percent ? selectedNodeDetail.memory.usage_percent + '%' : 'N/A' }}</div>
+                                </div>
+                            </div>
+                            <div v-if="selectedNodeDetail.memory.usage_percent" style="margin-top: 16px;">
+                                <div style="background: var(--bg-secondary); border-radius: 8px; height: 24px; overflow: hidden; position: relative;">
+                                    <div :style="{ width: selectedNodeDetail.memory.usage_percent + '%', background: selectedNodeDetail.memory.usage_percent > 80 ? 'var(--danger)' : selectedNodeDetail.memory.usage_percent > 60 ? 'var(--warning)' : 'var(--accent-primary)', height: '100%', transition: 'width 0.3s' }"></div>
+                                    <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 0.85em; font-weight: 600;">{{ selectedNodeDetail.memory.usage_percent }}%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Storage Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedNodeDetail.storage && selectedNodeDetail.storage.length > 0">
+                        <div class="card-header">
+                            <h3 class="card-title">💿 Storage</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Nome</th>
+                                            <th>Tipo</th>
+                                            <th>Totale</th>
+                                            <th>Usato</th>
+                                            <th>Disponibile</th>
+                                            <th>Utilizzo</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="store in selectedNodeDetail.storage" :key="store.name">
+                                            <td><strong>{{ store.name }}</strong></td>
+                                            <td><span class="badge badge-info">{{ store.type || 'N/A' }}</span></td>
+                                            <td>{{ formatSize((store.total_gb || 0) * 1024 * 1024 * 1024) }}</td>
+                                            <td>{{ formatSize((store.used_gb || 0) * 1024 * 1024 * 1024) }}</td>
+                                            <td>{{ formatSize((store.available_gb || 0) * 1024 * 1024 * 1024) }}</td>
+                                            <td>
+                                                <div style="display: flex; align-items: center; gap: 8px;">
+                                                    <div style="flex: 1; background: var(--bg-secondary); border-radius: 4px; height: 16px; overflow: hidden; position: relative;">
+                                                        <div :style="{ width: (store.usage_percent || 0) + '%', background: (store.usage_percent || 0) > 80 ? 'var(--danger)' : (store.usage_percent || 0) > 60 ? 'var(--warning)' : 'var(--accent-primary)', height: '100%' }"></div>
+                                                    </div>
+                                                    <span style="font-size: 0.9em; min-width: 45px;">{{ store.usage_percent || 0 }}%</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Network Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedNodeDetail.network && selectedNodeDetail.network.filter(n => (n.status === 'UP' || n.state === 'up' || n.status === 'up')).length > 0">
+                        <div class="card-header">
+                            <h3 class="card-title">🌐 Network</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Interfaccia</th>
+                                            <th>Tipo</th>
+                                            <th>IP</th>
+                                            <th>Netmask</th>
+                                            <th>Gateway</th>
+                                            <th>MAC</th>
+                                            <th>Stato</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="net in selectedNodeDetail.network.filter(n => (n.status === 'UP' || n.state === 'up' || n.status === 'up'))" :key="net.name">
+                                            <td><strong>{{ net.name }}</strong></td>
+                                            <td>
+                                                <span class="badge badge-info">{{ net.type || 'ethernet' }}</span>
+                                                <span v-if="net.bridge" class="badge badge-secondary" style="margin-left: 4px;">Bridge: {{ net.bridge }}</span>
+                                            </td>
+                                            <td>{{ net.ip || (net.ipv4 && net.ipv4.length > 0 ? net.ipv4[0] : 'N/A') }}</td>
+                                            <td>{{ net.netmask || 'N/A' }}</td>
+                                            <td>{{ net.gateway || 'N/A' }}</td>
+                                            <td style="font-family: monospace; font-size: 0.9em;">{{ net.mac || 'N/A' }}</td>
+                                            <td>
+                                                <span class="badge badge-success">
+                                                    {{ net.status || net.state || 'UP' }}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card" style="margin-top: 24px;" v-else-if="selectedNodeDetail">
+                        <div class="card-header">
+                            <h3 class="card-title">🌐 Network</h3>
+                        </div>
+                        <div class="card-body">
+                            <p style="color: var(--text-secondary); text-align: center;">Nessun dato di rete disponibile</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Temperature Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedNodeDetail.temperature">
+                        <div class="card-header">
+                            <h3 class="card-title">🌡️ Temperatura</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-card" v-if="selectedNodeDetail.temperature.highest_c">
+                                    <div class="stat-label">Massima</div>
+                                    <div class="stat-value" :style="{ color: selectedNodeDetail.temperature.highest_c > 70 ? 'var(--danger)' : selectedNodeDetail.temperature.highest_c > 60 ? 'var(--warning)' : 'var(--accent-primary)' }">
+                                        {{ selectedNodeDetail.temperature.highest_c }}°C
+                                    </div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.temperature.average_c">
+                                    <div class="stat-label">Media</div>
+                                    <div class="stat-value">{{ selectedNodeDetail.temperature.average_c }}°C</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Hardware Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedNodeDetail.hardware">
+                        <div class="card-header">
+                            <h3 class="card-title">🔧 Hardware</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-card" v-if="selectedNodeDetail.hardware.model">
+                                    <div class="stat-label">Modello</div>
+                                    <div class="stat-value" style="font-size: 0.95em;">{{ selectedNodeDetail.hardware.model }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.hardware.manufacturer">
+                                    <div class="stat-label">Produttore</div>
+                                    <div class="stat-value" style="font-size: 0.95em;">{{ selectedNodeDetail.hardware.manufacturer }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.hardware.serial">
+                                    <div class="stat-label">Serial Number</div>
+                                    <div class="stat-value" style="font-size: 0.9em; font-family: monospace;">{{ selectedNodeDetail.hardware.serial }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.hardware.board">
+                                    <div class="stat-label">Scheda Madre</div>
+                                    <div class="stat-value" style="font-size: 0.95em;">{{ selectedNodeDetail.hardware.board }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.hardware.bios_vendor">
+                                    <div class="stat-label">BIOS Vendor</div>
+                                    <div class="stat-value" style="font-size: 0.95em;">{{ selectedNodeDetail.hardware.bios_vendor }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.hardware.bios_version">
+                                    <div class="stat-label">BIOS Version</div>
+                                    <div class="stat-value" style="font-size: 0.95em;">{{ selectedNodeDetail.hardware.bios_version }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.hardware.bios_date">
+                                    <div class="stat-label">BIOS Date</div>
+                                    <div class="stat-value" style="font-size: 0.9em;">{{ selectedNodeDetail.hardware.bios_date }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- CPU Details Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedNodeDetail.cpu && (selectedNodeDetail.cpu.sockets || selectedNodeDetail.cpu.threads || selectedNodeDetail.cpu.load_15m)">
+                        <div class="card-header">
+                            <h3 class="card-title">⚙️ Dettagli CPU</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-card" v-if="selectedNodeDetail.cpu.sockets">
+                                    <div class="stat-label">Sockets</div>
+                                    <div class="stat-value">{{ selectedNodeDetail.cpu.sockets }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.cpu.threads">
+                                    <div class="stat-label">Threads</div>
+                                    <div class="stat-value">{{ selectedNodeDetail.cpu.threads }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.cpu.load_1m !== undefined">
+                                    <div class="stat-label">Load 1m</div>
+                                    <div class="stat-value">{{ selectedNodeDetail.cpu.load_1m?.toFixed(2) || 'N/A' }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.cpu.load_5m !== undefined">
+                                    <div class="stat-label">Load 5m</div>
+                                    <div class="stat-value">{{ selectedNodeDetail.cpu.load_5m?.toFixed(2) || 'N/A' }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.cpu.load_15m !== undefined">
+                                    <div class="stat-label">Load 15m</div>
+                                    <div class="stat-value">{{ selectedNodeDetail.cpu.load_15m?.toFixed(2) || 'N/A' }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Swap Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedNodeDetail.memory && (selectedNodeDetail.memory.swap_total_gb || selectedNodeDetail.memory.swap_used_gb)">
+                        <div class="card-header">
+                            <h3 class="card-title">💾 Swap</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-card" v-if="selectedNodeDetail.memory.swap_total_gb">
+                                    <div class="stat-label">Totale</div>
+                                    <div class="stat-value">{{ formatSize((selectedNodeDetail.memory.swap_total_gb || 0) * 1024 * 1024 * 1024) }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.memory.swap_used_gb">
+                                    <div class="stat-label">Usato</div>
+                                    <div class="stat-value">{{ formatSize((selectedNodeDetail.memory.swap_used_gb || 0) * 1024 * 1024 * 1024) }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- License Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedNodeDetail.license">
+                        <div class="card-header">
+                            <h3 class="card-title">📜 Licenza</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-card">
+                                    <div class="stat-label">Status</div>
+                                    <div class="stat-value">
+                                        <span class="badge" :class="selectedNodeDetail.license.status === 'active' ? 'badge-success' : 'badge-warning'">
+                                            {{ selectedNodeDetail.license.status || 'N/A' }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.license.level">
+                                    <div class="stat-label">Level</div>
+                                    <div class="stat-value">{{ selectedNodeDetail.license.level }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.license.type">
+                                    <div class="stat-label">Tipo</div>
+                                    <div class="stat-value" style="font-size: 0.9em;">{{ selectedNodeDetail.license.type }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.license.key">
+                                    <div class="stat-label">Key</div>
+                                    <div class="stat-value" style="font-size: 0.85em; font-family: monospace;">{{ selectedNodeDetail.license.key }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.license.subscription">
+                                    <div class="stat-label">Subscription</div>
+                                    <div class="stat-value" style="font-size: 0.85em; font-family: monospace;">{{ selectedNodeDetail.license.subscription }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.license.sockets">
+                                    <div class="stat-label">Sockets</div>
+                                    <div class="stat-value">{{ selectedNodeDetail.license.sockets }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedNodeDetail.license.valid_until">
+                                    <div class="stat-label">Valida fino a</div>
+                                    <div class="stat-value" style="font-size: 0.9em;">{{ selectedNodeDetail.license.valid_until }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div v-else style="text-align: center; padding: 40px; color: var(--text-secondary);">
+                    Nessun dato disponibile
+                </div>
+            </div>
+            
+            <!-- VM Details Page -->
+            <div v-if="currentPage === 'vm-details'">
+                <div class="page-header">
+                    <button class="btn btn-secondary btn-sm" @click="currentPage = 'proxmox'" style="margin-bottom: 12px;">
+                        ← Torna a Proxmox
+                    </button>
+                    <h1 class="page-title">🖥️ Dettagli VM</h1>
+                    <p class="page-subtitle" v-if="selectedVMDetail">{{ selectedVMDetail.name }} (VMID: {{ selectedVMDetail.vmid }})</p>
+                </div>
+                
+                <div v-if="loadingVMDetail" style="text-align: center; padding: 40px; color: var(--text-secondary);">
+                    ⏳ Caricamento dettagli VM...
+                </div>
+                
+                <div v-else-if="!selectedVMDetail" style="text-align: center; padding: 40px; color: var(--text-secondary);">
+                    <p>Nessun dato disponibile per questa VM</p>
+                    <button class="btn btn-secondary btn-sm" @click="currentPage = 'proxmox'" style="margin-top: 12px;">
+                        ← Torna a Proxmox
+                    </button>
+                </div>
+                
+                <div v-else-if="selectedVMDetail">
+                    <!-- Overview Card -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">📊 Panoramica</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-card">
+                                    <div class="stat-label">VMID</div>
+                                    <div class="stat-value">{{ selectedVMDetail.vmid }}</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Nome</div>
+                                    <div class="stat-value" style="font-size: 1.1em;">{{ selectedVMDetail.name }}</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Tipo</div>
+                                    <div class="stat-value">
+                                        <span class="badge badge-info">{{ selectedVMDetail.vm_type }}</span>
+                                    </div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Stato</div>
+                                    <div class="stat-value">
+                                        <span class="badge" :class="selectedVMDetail.status === 'running' ? 'badge-success' : 'badge-warning'">
+                                            {{ selectedVMDetail.status }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Nodo</div>
+                                    <div class="stat-value" style="font-size: 1.1em;">{{ selectedVMDetail.node_name }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Runtime Stats Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedVMDetail.runtime">
+                        <div class="card-header">
+                            <h3 class="card-title">⚡ Statistiche Runtime</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-card" v-if="selectedVMDetail.runtime.cpu !== undefined">
+                                    <div class="stat-label">CPU Usage</div>
+                                    <div class="stat-value">{{ selectedVMDetail.runtime.cpu }}%</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.runtime.mem">
+                                    <div class="stat-label">Memoria Usata</div>
+                                    <div class="stat-value">{{ formatSize(selectedVMDetail.runtime.mem) }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.runtime.maxmem">
+                                    <div class="stat-label">Memoria Totale</div>
+                                    <div class="stat-value">{{ formatSize(selectedVMDetail.runtime.maxmem) }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.runtime.uptime">
+                                    <div class="stat-label">Uptime</div>
+                                    <div class="stat-value" style="font-size: 0.9em;">{{ formatUptime(selectedVMDetail.runtime.uptime) }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.runtime.diskread">
+                                    <div class="stat-label">Disk Read</div>
+                                    <div class="stat-value" style="font-size: 0.9em;">{{ formatSize(selectedVMDetail.runtime.diskread) }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.runtime.diskwrite">
+                                    <div class="stat-label">Disk Write</div>
+                                    <div class="stat-value" style="font-size: 0.9em;">{{ formatSize(selectedVMDetail.runtime.diskwrite) }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.runtime.netin">
+                                    <div class="stat-label">Network In</div>
+                                    <div class="stat-value" style="font-size: 0.9em;">{{ formatSize(selectedVMDetail.runtime.netin) }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.runtime.netout">
+                                    <div class="stat-label">Network Out</div>
+                                    <div class="stat-value" style="font-size: 0.9em;">{{ formatSize(selectedVMDetail.runtime.netout) }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.runtime.pid">
+                                    <div class="stat-label">PID</div>
+                                    <div class="stat-value" style="font-size: 0.9em; font-family: monospace;">{{ selectedVMDetail.runtime.pid }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- VM Configuration Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedVMDetail.config">
+                        <div class="card-header">
+                            <h3 class="card-title">⚙️ Configurazione VM</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-card" v-if="selectedVMDetail.config.cores">
+                                    <div class="stat-label">CPU Cores</div>
+                                    <div class="stat-value">{{ selectedVMDetail.config.cores }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.config.sockets">
+                                    <div class="stat-label">CPU Sockets</div>
+                                    <div class="stat-value">{{ selectedVMDetail.config.sockets }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.config.memory">
+                                    <div class="stat-label">Memoria Config</div>
+                                    <div class="stat-value">{{ formatSize((selectedVMDetail.config.memory || 0) * 1024 * 1024) }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.bios">
+                                    <div class="stat-label">BIOS</div>
+                                    <div class="stat-value">
+                                        <span class="badge badge-info">{{ selectedVMDetail.bios }}</span>
+                                    </div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.ostype">
+                                    <div class="stat-label">OS Type</div>
+                                    <div class="stat-value">
+                                        <span class="badge badge-info">{{ selectedVMDetail.ostype }}</span>
+                                    </div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.boot">
+                                    <div class="stat-label">Boot Order</div>
+                                    <div class="stat-value" style="font-size: 0.9em; font-family: monospace;">{{ selectedVMDetail.boot }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.agent_enabled !== undefined">
+                                    <div class="stat-label">Agent Enabled</div>
+                                    <div class="stat-value">
+                                        <span class="badge" :class="selectedVMDetail.agent_enabled ? 'badge-success' : 'badge-warning'">
+                                            {{ selectedVMDetail.agent_enabled ? 'Yes' : 'No' }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.primary_bridge">
+                                    <div class="stat-label">Primary Bridge</div>
+                                    <div class="stat-value" style="font-size: 0.95em;">{{ selectedVMDetail.primary_bridge }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.primary_ip">
+                                    <div class="stat-label">Primary IP</div>
+                                    <div class="stat-value" style="font-size: 0.95em; font-family: monospace;">{{ selectedVMDetail.primary_ip }}</div>
+                                </div>
+                                <div class="stat-card" v-if="selectedVMDetail.tags">
+                                    <div class="stat-label">Tags</div>
+                                    <div class="stat-value" style="font-size: 0.9em;">
+                                        <span v-for="tag in selectedVMDetail.tags.split(',')" :key="tag" class="badge badge-secondary" style="margin-right: 4px;">
+                                            {{ tag.trim() }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Disks Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedVMDetail.disks && selectedVMDetail.disks.length > 0">
+                        <div class="card-header">
+                            <h3 class="card-title">💿 Dischi</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Type</th>
+                                            <th>Volume</th>
+                                            <th>Media</th>
+                                            <th>Storage</th>
+                                            <th>Discard</th>
+                                            <th>IOThread</th>
+                                            <th>Size</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="disk in selectedVMDetail.disks" :key="disk.id">
+                                            <td><strong>{{ disk.id }}</strong></td>
+                                            <td>
+                                                <span class="badge badge-info">{{ disk.type || 'disk' }}</span>
+                                            </td>
+                                            <td style="font-family: monospace; font-size: 0.9em;">{{ disk.volume || disk.dataset || 'none' }}</td>
+                                            <td>{{ disk.media || '-' }}</td>
+                                            <td>{{ disk.storage || '-' }}</td>
+                                            <td>
+                                                <span v-if="disk.discard" class="badge badge-success">{{ disk.discard }}</span>
+                                                <span v-else>-</span>
+                                            </td>
+                                            <td>
+                                                <span v-if="disk.iothread" class="badge badge-info">{{ disk.iothread }}</span>
+                                                <span v-else>-</span>
+                                            </td>
+                                            <td>{{ disk.size ? formatSize(disk.size) : (disk.size_bytes ? formatSize(disk.size_bytes) : '-') }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Network Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedVMDetail.networks && selectedVMDetail.networks.length > 0">
+                        <div class="card-header">
+                            <h3 class="card-title">🌐 Network</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Interfaccia</th>
+                                            <th>MAC</th>
+                                            <th>Bridge</th>
+                                            <th>Model</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="net in selectedVMDetail.networks" :key="net.name">
+                                            <td><strong>{{ net.name }}</strong></td>
+                                            <td>{{ net.mac || 'N/A' }}</td>
+                                            <td>{{ net.bridge || 'N/A' }}</td>
+                                            <td>{{ net.model || 'N/A' }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div v-if="selectedVMDetail.ip_addresses && Object.keys(selectedVMDetail.ip_addresses).length > 0" style="margin-top: 16px;">
+                                <h4 style="margin-bottom: 8px;">Indirizzi IP</h4>
+                                <div v-for="(ips, iface) in selectedVMDetail.ip_addresses" :key="iface" style="margin-bottom: 8px;">
+                                    <strong>{{ iface }}:</strong>
+                                    <span v-for="(ip, idx) in ips" :key="idx" style="margin-left: 8px;">
+                                        <span class="badge badge-info">{{ ip }}</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Config Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedVMDetail.config">
+                        <div class="card-header">
+                            <h3 class="card-title">⚙️ Configurazione</h3>
+                        </div>
+                        <div class="card-body">
+                            <div style="background: var(--bg-secondary); padding: 16px; border-radius: 8px; font-family: monospace; font-size: 0.9em; overflow-x: auto;">
+                                <pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">{{ JSON.stringify(selectedVMDetail.config, null, 2) }}</pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Snapshots Card -->
+                    <div class="card" style="margin-top: 24px;" v-if="selectedVMDetail.snapshots && selectedVMDetail.snapshots.count > 0">
+                        <div class="card-header">
+                            <h3 class="card-title">📸 Snapshot</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="stats-grid">
+                                <div class="stat-card">
+                                    <div class="stat-label">Totale Snapshot</div>
+                                    <div class="stat-value">{{ selectedVMDetail.snapshots.count || 0 }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div v-else style="text-align: center; padding: 40px; color: var(--text-secondary);">
+                    Nessun dato disponibile
                 </div>
             </div>
                 
@@ -2754,6 +3622,24 @@
                         <input type="text" class="form-input" v-model="newNode.ssh_key_path">
                     </div>
                     
+                    <!-- SSH Auto-Setup -->
+                    <div style="background: rgba(76, 175, 80, 0.1); padding: 16px; border-radius: 8px; margin-top: 16px; border: 1px solid rgba(76, 175, 80, 0.3);">
+                        <h4 style="color: #4caf50; margin-bottom: 12px;">🔑 Setup Automatico SSH</h4>
+                        <div class="form-group" style="margin-bottom: 8px;">
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" v-model="newNode.auto_distribute_key" style="width: 18px; height: 18px;">
+                                <span>Distribuisci automaticamente la chiave SSH al nodo</span>
+                            </label>
+                        </div>
+                        <div class="form-group" v-if="newNode.auto_distribute_key" style="margin-bottom: 0;">
+                            <label class="form-label">Password Root (per primo accesso)</label>
+                            <input type="password" class="form-input" v-model="newNode.ssh_password" placeholder="Inserisci la password root del nodo">
+                            <small style="color: var(--text-secondary); display: block; margin-top: 4px;">
+                                La password è necessaria solo per la prima configurazione. Dopo non sarà più richiesta.
+                            </small>
+                        </div>
+                    </div>
+                    
                     <!-- PBS Config (shown when PBS selected) -->
                     <div v-if="newNode.node_type === 'pbs'" style="background: rgba(156, 39, 176, 0.1); padding: 16px; border-radius: 8px; margin-top: 16px; border: 1px solid rgba(156, 39, 176, 0.3);">
                         <h4 style="color: #ce93d8; margin-bottom: 12px;">🗄️ Configurazione PBS</h4>
@@ -3061,6 +3947,53 @@
             </div>
         </div>
         
+        <!-- Info Modal -->
+        <div class="modal-overlay" v-if="showInfoModal" @click.self="showInfoModal = false">
+            <div class="modal" style="max-width: 500px;">
+                <div class="modal-header">
+                    <h3 class="modal-title">ℹ️ Informazioni</h3>
+                    <button class="btn btn-icon" @click="showInfoModal = false">✕</button>
+                </div>
+                <div class="modal-body" style="text-align: center;">
+                    <img src="https://da-sns.domarc.it/static/images/company-logo-pos.png" alt="Domarc" style="max-width: 150px; margin-bottom: 20px;">
+                    
+                    <h2 style="margin-bottom: 8px;">DAPX-backandrepl</h2>
+                    <p style="color: var(--text-secondary); margin-bottom: 20px;">Backup & Replica per Proxmox</p>
+                    
+                    <div style="background: var(--bg-tertiary); padding: 16px; border-radius: 8px; margin-bottom: 20px; text-align: left;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="color: var(--text-secondary);">Versione:</span>
+                            <strong>3.3.0</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="color: var(--text-secondary);">Release:</span>
+                            <strong>Dicembre 2025</strong>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="color: var(--text-secondary);">Licenza:</span>
+                            <strong>Proprietaria</strong>
+                        </div>
+                    </div>
+                    
+                    <div style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-top: 16px;">
+                        <p style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 8px;">
+                            © 2025 <strong>Domarc S.r.l.</strong>
+                        </p>
+                        <p style="font-size: 0.85em; color: var(--text-muted);">
+                            Tutti i diritti riservati. Questo software è proprietà esclusiva di Domarc S.r.l.<br>
+                            L'uso non autorizzato è vietato.
+                        </p>
+                        <p style="font-size: 0.85em; color: var(--accent-primary); margin-top: 12px;">
+                            <a href="https://www.domarc.it" target="_blank" style="color: var(--accent-primary);">www.domarc.it</a>
+                        </p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" @click="showInfoModal = false">Chiudi</button>
+                </div>
+            </div>
+        </div>
+        
         <!-- Toast -->
         <div class="toast-container">
             <div v-for="toast in toasts" :key="toast.id" class="toast" :class="'toast-' + toast.type">{{ toast.message }}</div>
@@ -3123,6 +4056,13 @@
                 const dashboardOverview = ref(null);
                 const dashboardNodes = ref([]);
                 const dashboardVMs = ref([]);
+                const dashboardDataFromCache = ref(false);
+                
+                // Detail pages data
+                const selectedNodeDetail = ref(null);
+                const selectedVMDetail = ref(null);
+                const loadingNodeDetail = ref(false);
+                const loadingVMDetail = ref(false);
                 
                 const selectedNodeId = ref('');
                 const selectedVmNodeId = ref('');
@@ -3151,6 +4091,7 @@
                 const showSyncJobModal = ref(false);
                 const editingSyncJobId = ref(null);
                 const showUserModal = ref(false);
+                const showInfoModal = ref(false);
                 const editingUser = ref(null);
                 const selectedLog = ref(null);
                 
@@ -3216,7 +4157,10 @@
                     // BTRFS support (only for PVE nodes)
                     storage_type: 'zfs',
                     btrfs_mount: '/mnt/btrfs-storage',
-                    btrfs_snapshot_dir: ''
+                    btrfs_snapshot_dir: '',
+                    // SSH auto-setup
+                    ssh_password: '',
+                    auto_distribute_key: true
                 });
                 const newSyncJob = ref({ 
                     name: '', 
@@ -3370,10 +4314,35 @@
                 
                 const formatDate = d => d ? new Date(d).toLocaleString('it-IT') : '-';
                 
+                const formatUptime = (seconds) => {
+                    if (!seconds) return 'N/A';
+                    const days = Math.floor(seconds / 86400);
+                    const hours = Math.floor((seconds % 86400) / 3600);
+                    const minutes = Math.floor((seconds % 3600) / 60);
+                    if (days > 0) {
+                        return `${days}d ${hours}h ${minutes}m`;
+                    } else if (hours > 0) {
+                        return `${hours}h ${minutes}m`;
+                    } else {
+                        return `${minutes}m`;
+                    }
+                };
+                
                 const formatSize = (bytes) => {
-                    if (!bytes || bytes === 0) return '0 B';
+                    // Se è una stringa già formattata (es: "46.4 GB"), restituiscila
+                    if (typeof bytes === 'string') {
+                        if (bytes.match(/[\d.,]+\s*(B|KB|MB|GB|TB|PB)/i)) {
+                            return bytes;
+                        }
+                        // Prova a convertire in numero
+                        bytes = parseFloat(bytes.replace(',', '.'));
+                    }
+                    // Verifica che sia un numero valido
+                    if (bytes === null || bytes === undefined || isNaN(bytes) || bytes === 0) {
+                        return '0 B';
+                    }
                     const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-                    let size = bytes;
+                    let size = Math.abs(bytes);
                     let unitIndex = 0;
                     while (size >= 1024 && unitIndex < units.length - 1) {
                         size /= 1024;
@@ -3481,7 +4450,46 @@
                 };
                 
                 // Dashboard methods
-                const loadDashboard = async () => {
+                const loadDashboardFromStorage = () => {
+                    try {
+                        const stored = localStorage.getItem('dashboard_data');
+                        if (stored) {
+                            const data = JSON.parse(stored);
+                            dashboardOverview.value = data.overview;
+                            dashboardNodes.value = data.nodes;
+                            dashboardVMs.value = data.vms;
+                            dashboardDataFromCache.value = true;
+                            return true;
+                        }
+                    } catch (e) {
+                        console.error('Errore caricamento dati da storage:', e);
+                    }
+                    dashboardDataFromCache.value = false;
+                    return false;
+                };
+                
+                const saveDashboardToStorage = () => {
+                    try {
+                        const data = {
+                            overview: dashboardOverview.value,
+                            nodes: dashboardNodes.value,
+                            vms: dashboardVMs.value,
+                            timestamp: Date.now()
+                        };
+                        localStorage.setItem('dashboard_data', JSON.stringify(data));
+                    } catch (e) {
+                        console.error('Errore salvataggio dati in storage:', e);
+                    }
+                };
+                
+                const loadDashboard = async (forceRefresh = false) => {
+                    // Carica da localStorage se disponibile e non è un refresh forzato
+                    if (!forceRefresh && loadDashboardFromStorage()) {
+                        // Carica comunque jobs e log (non vengono salvati in cache)
+                        await Promise.all([loadSyncJobs(), loadRecoveryJobs(), loadLogs()]);
+                        return;
+                    }
+                    
                     loading.value = true;
                     try {
                         // Load overview
@@ -3490,41 +4498,74 @@
                         
                         // Load nodes
                         const nodesRes = await axios.get(`${API}/dashboard/nodes`);
+                        console.log('Dashboard nodes response:', nodesRes.data);
                         dashboardNodes.value = nodesRes.data;
                         
                         // Load VMs
                         const vmsRes = await axios.get(`${API}/dashboard/vms`);
                         dashboardVMs.value = vmsRes.data;
+                        
+                        // Load jobs and logs (non vengono salvati in cache)
+                        await Promise.all([loadSyncJobs(), loadRecoveryJobs(), loadLogs()]);
+                        
+                        // Salva in localStorage
+                        saveDashboardToStorage();
+                        dashboardDataFromCache.value = false;
                     } catch (error) {
                         console.error('Errore caricamento dashboard:', error);
                         showToast('Errore caricamento dashboard', 'error');
+                        // Se c'è un errore, prova a caricare da storage
+                        if (!loadDashboardFromStorage()) {
+                            showToast('Nessun dato disponibile in cache', 'warning');
+                        }
+                        // Prova comunque a caricare jobs e log
+                        try {
+                            await Promise.all([loadSyncJobs(), loadRecoveryJobs(), loadLogs()]);
+                        } catch (e) {
+                            console.error('Errore caricamento jobs/logs:', e);
+                        }
                     }
                     loading.value = false;
                 };
                 
-                const viewNodeDetails = (nodeId) => {
-                    // Navigate to nodes page and highlight the node
-                    currentPage.value = 'nodes';
-                    // Scroll to node or highlight (could be enhanced)
-                    setTimeout(() => {
-                        const nodeElement = document.querySelector(`[data-node-id="${nodeId}"]`);
-                        if (nodeElement) {
-                            nodeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            nodeElement.style.background = 'rgba(0, 255, 157, 0.1)';
-                            setTimeout(() => {
-                                nodeElement.style.background = '';
-                            }, 2000);
-                        }
-                    }, 100);
+                const loadNodeDetails = async (nodeId) => {
+                    loadingNodeDetail.value = true;
+                    selectedNodeDetail.value = null;
+                    try {
+                        const res = await axios.get(`${API}/nodes/${nodeId}/host-details`);
+                        selectedNodeDetail.value = res.data;
+                    } catch (error) {
+                        console.error('Errore caricamento dettagli nodo:', error);
+                        showToast('Errore caricamento dettagli nodo', 'error');
+                    }
+                    loadingNodeDetail.value = false;
                 };
                 
-                const viewVMDetails = (nodeId, vmid, vmType) => {
-                    // Navigate to VMs page
-                    currentPage.value = 'vms';
-                    selectedVmNodeId.value = nodeId;
-                    // Load VMs for the node
-                    loadNodeVms();
-                    // Could enhance to highlight specific VM
+                const loadVMDetails = async (nodeId, vmid, vmType = 'qemu') => {
+                    loadingVMDetail.value = true;
+                    selectedVMDetail.value = null;
+                    try {
+                        console.log(`Caricamento dettagli VM: nodeId=${nodeId}, vmid=${vmid}, vmType=${vmType}`);
+                        const res = await axios.get(`${API}/nodes/${nodeId}/vms/${vmid}/full-details?vm_type=${vmType}`);
+                        console.log('VM details response:', res.data);
+                        selectedVMDetail.value = res.data;
+                    } catch (error) {
+                        console.error('Errore caricamento dettagli VM:', error);
+                        console.error('Error response:', error.response?.data);
+                        showToast(`Errore caricamento dettagli VM: ${error.response?.data?.detail || error.message}`, 'error');
+                        selectedVMDetail.value = null;
+                    }
+                    loadingVMDetail.value = false;
+                };
+                
+                const viewNodeDetails = (nodeId) => {
+                    currentPage.value = 'node-details';
+                    loadNodeDetails(nodeId);
+                };
+                
+                const viewVMDetails = (nodeId, vmid, vmType = 'qemu') => {
+                    currentPage.value = 'vm-details';
+                    loadVMDetails(nodeId, vmid, vmType);
                 };
                 
                 // Helper per ottenere il nome di un nodo dato l'ID
@@ -4056,8 +5097,21 @@
                 const createNode = async () => {
                     loading.value = true;
                     try {
-                        await axios.post(`${API}/nodes/`, newNode.value);
-                        showToast('Nodo creato');
+                        const res = await axios.post(`${API}/nodes/`, newNode.value);
+                        const sshSetup = res.data.ssh_key_setup;
+                        
+                        if (sshSetup) {
+                            if (sshSetup.success || sshSetup.already_present) {
+                                showToast(`Nodo creato. Chiave SSH: ${sshSetup.message}`, 'success');
+                            } else if (sshSetup.needs_password) {
+                                showToast('Nodo creato ma chiave SSH non distribuita. Vai su SSH Keys per configurare.', 'warning');
+                            } else {
+                                showToast(`Nodo creato. SSH: ${sshSetup.message}`, 'warning');
+                            }
+                        } else {
+                            showToast('Nodo creato', 'success');
+                        }
+                        
                         showNodeModal.value = false;
                         newNode.value = { 
                             name: '', 
@@ -4065,9 +5119,15 @@
                             ssh_port: 22, 
                             ssh_user: 'root', 
                             ssh_key_path: '/root/.ssh/id_rsa',
+                            node_type: 'pve',
+                            pbs_datastore: 'datastore1',
+                            pbs_fingerprint: '',
+                            pbs_password: '',
                             storage_type: 'zfs',
                             btrfs_mount: '/mnt/btrfs-storage',
-                            btrfs_snapshot_dir: ''
+                            btrfs_snapshot_dir: '',
+                            ssh_password: '',
+                            auto_distribute_key: true
                         };
                         await loadNodes();
                     } catch (e) { showToast(e.response?.data?.detail || 'Errore', 'error'); }
@@ -4625,8 +5685,9 @@
                 
                 // Watch currentPage to load dashboard when navigating
                 watch(currentPage, (newPage) => {
-                    if (newPage === 'dashboard') {
-                        loadDashboard();
+                    if (newPage === 'proxmox') {
+                        // Carica dati Proxmox da localStorage, non forzare refresh
+                        loadDashboard(false);
                     }
                 });
                 
@@ -4634,9 +5695,9 @@
                 onMounted(async () => {
                     if (checkAuth()) {
                         await loadAllData();
-                        // Load dashboard if on dashboard page
-                        if (currentPage.value === 'dashboard') {
-                            await loadDashboard();
+                        // Load Proxmox dashboard if on proxmox page (da localStorage)
+                        if (currentPage.value === 'proxmox') {
+                            await loadDashboard(false);
                         }
                     } else {
                         await checkSetup();
@@ -4655,7 +5716,7 @@
                     // Recovery Jobs (PBS)
                     recoveryJobs, pbsNodes, pveNodes, showAddRecoveryJobModal, sourceVmsForRecovery, newRecoveryJob,
                     settings, authSettings, notifSettings,
-                    showNodeModal, showSyncJobModal, editingSyncJobId, showUserModal, editingUser,
+                    showNodeModal, showSyncJobModal, editingSyncJobId, showUserModal, editingUser, showInfoModal,
                     // SSH Keys
                     sshKeyInfo, sshTestResults, showDistributeModal, distributePassword, selectedNodesForDistribute, distributeResults,
                     showPasswordPrompt, sshPassword, pendingDistributeNodeId, retryDistributeWithPassword,
@@ -4664,15 +5725,16 @@
                     // Snapshot Modal
                     showSnapshotModal, snapshotTab, snapshotModalData,
                     // Dashboard
-                    dashboardOverview, dashboardNodes, dashboardVMs,
+                    dashboardOverview, dashboardNodes, dashboardVMs, dashboardDataFromCache,
+                    selectedNodeDetail, selectedVMDetail, loadingNodeDetail, loadingVMDetail,
                     newNode, newSyncJob, newUser,
                     isAdmin, canEdit,
-                    showToast, formatDate, formatSize, getStatusClass,
+                    showToast, formatDate, formatUptime, formatSize, getStatusClass,
                     doSetup, doLogin, doLogout,
                     loadNodes, loadSyncJobs, loadLogs, loadNotifSettings, loadNodeDatasets, loadNodeSnapshots, loadNodeVms,
                     loadSourceDatasets, loadDestDatasets, onDestNodeChange, updateDestDataset, applySchedule, showLogDetail,
                     // Dashboard functions
-                    loadDashboard, viewNodeDetails, viewVMDetails,
+                    loadDashboard, loadNodeDetails, loadVMDetails, viewNodeDetails, viewVMDetails,
                     // VM Replica functions
                     loadSourceVMs, loadDestPools, selectVMForReplica, cancelVMReplica, createVMReplica,
                     runVMGroup, deleteVMGroup, registerVMGroup,
@@ -4708,4 +5770,5 @@
     </script>
 </body>
 </html>
+
 

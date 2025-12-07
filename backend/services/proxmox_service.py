@@ -3,7 +3,7 @@ Proxmox Service - Gestione VM e integrazione API Proxmox
 """
 
 import asyncio
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
 import logging
 import json
 import re
@@ -597,30 +597,51 @@ echo "Configuration created"
                 status_data = json.loads(status_result.stdout)
                 result["status"] = status_data.get("status", "unknown")
                 result["runtime"] = {
+                    "cpu": status_data.get("cpu", 0),
                     "cpu_percent": status_data.get("cpu", 0),
+                    "mem": status_data.get("mem", 0),
                     "mem_used_mb": status_data.get("mem", 0) / (1024 * 1024) if status_data.get("mem") else 0,
+                    "maxmem": status_data.get("maxmem", 0),
                     "mem_total_mb": status_data.get("maxmem", 0) / (1024 * 1024) if status_data.get("maxmem") else 0,
+                    "uptime": status_data.get("uptime", 0),
                     "uptime_seconds": status_data.get("uptime", 0),
+                    "diskread": status_data.get("diskread", 0),
                     "diskread_bytes": status_data.get("diskread", 0),
+                    "diskwrite": status_data.get("diskwrite", 0),
                     "diskwrite_bytes": status_data.get("diskwrite", 0),
+                    "netin": status_data.get("netin", 0),
                     "netin_bytes": status_data.get("netin", 0),
+                    "netout": status_data.get("netout", 0),
                     "netout_bytes": status_data.get("netout", 0),
+                    "balloon": status_data.get("balloon", 0),
                     "balloon_mb": status_data.get("balloon", 0) / (1024 * 1024) if status_data.get("balloon") else 0,
                     "pid": status_data.get("pid"),
                     "qmpstatus": status_data.get("qmpstatus"),
                     "ha_state": status_data.get("ha", {}).get("state") if isinstance(status_data.get("ha"), dict) else None
                 }
                 
-                # Agent info
-                agent_data = status_data.get("agent", {})
-                if isinstance(agent_data, dict):
-                    result["agent"] = {
-                        "enabled": True,
-                        "version": agent_data.get("version"),
-                        "status": agent_data.get("status")
-                    }
+                # Agent info - può essere int (1/0), bool, o dict
+                agent_data = status_data.get("agent")
+                if agent_data:
+                    if isinstance(agent_data, dict):
+                        result["agent"] = {
+                            "enabled": True,
+                            "version": agent_data.get("version"),
+                            "status": agent_data.get("status")
+                        }
+                    else:
+                        # agent è un int o bool
+                        result["agent"] = {
+                            "enabled": bool(agent_data),
+                            "version": None
+                        }
             except json.JSONDecodeError:
                 logger.warning(f"Errore parsing status JSON per VM {vmid}")
+        
+        # Controlla anche dalla config se agent è abilitato
+        if result["config"].get("agent") and not result["agent"].get("enabled"):
+            agent_config = result["config"].get("agent", "0")
+            result["agent"]["enabled"] = str(agent_config).startswith("1")
         
         # Agent network (se running e agent abilitato)
         if result["status"] == "running" and result["agent"].get("enabled"):
@@ -697,7 +718,7 @@ echo "Configuration created"
                     networks.append(net_info)
             result["networks"] = networks
         
-        # Dischi (usa metodo esistente)
+        # Dischi (usa metodo esistente e arricchisci con info dalla config)
         disks = await self.get_vm_disks_with_size(
             hostname=hostname,
             vmid=vmid,
@@ -706,6 +727,37 @@ echo "Configuration created"
             username=username,
             key_path=key_path
         )
+        
+        # Arricchisci dischi con info dalla config
+        if result["config"]:
+            for disk in disks:
+                disk_id = disk.get("disk_name", "").replace(":", "")
+                # Cerca nella config per questo disco
+                for key, value in result["config"].items():
+                    if key == disk_id or key.startswith(disk_id + ":"):
+                        # Parse parametri aggiuntivi
+                        if isinstance(value, str):
+                            for param in value.split(","):
+                                if "=" in param:
+                                    param_name, param_value = param.split("=", 1)
+                                    param_name = param_name.strip()
+                                    param_value = param_value.strip()
+                                    
+                                    if param_name == "discard":
+                                        disk["discard"] = param_value
+                                    elif param_name == "iothread":
+                                        disk["iothread"] = param_value
+                                    elif param_name == "media":
+                                        disk["media"] = param_value
+                                    elif param_name == "size":
+                                        disk["size_config"] = param_value
+                
+                # Imposta tipo e ID
+                disk["id"] = disk.get("disk_name", "").replace(":", "")
+                disk["type"] = "disk"
+                if not disk.get("volume"):
+                    disk["volume"] = disk.get("dataset", "none")
+        
         result["disks"] = disks
         
         # Parse config per info aggiuntive
@@ -724,6 +776,34 @@ echo "Configuration created"
                     result["config"]["memory_gb"] = round(int(memory) / 1024, 2)
                 except (ValueError, TypeError):
                     pass
+            
+            # Estrai info aggiuntive dalla config
+            result["bios"] = result["config"].get("bios", "seabios")
+            result["ostype"] = result["config"].get("ostype", "l26")
+            result["boot"] = result["config"].get("boot", "")
+            
+            # Agent info - converti in dizionario per compatibilità con il modello
+            agent_config = result["config"].get("agent", "0")
+            agent_enabled = agent_config == "1" or str(agent_config).startswith("1")
+            result["agent"] = {
+                "enabled": agent_enabled,
+                "version": None
+            }
+            result["agent_enabled"] = agent_enabled
+            result["tags"] = result["config"].get("tags", "")
+            
+            # Primary bridge (prima interfaccia di rete)
+            if result["networks"] and len(result["networks"]) > 0:
+                primary_net = result["networks"][0]
+                result["primary_bridge"] = primary_net.get("bridge", "")
+            else:
+                result["primary_bridge"] = ""
+            
+            # Primary IP (dal runtime se disponibile)
+            if result["ip_addresses"] and result["ip_addresses"].get("ipv4"):
+                result["primary_ip"] = result["ip_addresses"]["ipv4"][0]
+            else:
+                result["primary_ip"] = ""
         
         return result
 

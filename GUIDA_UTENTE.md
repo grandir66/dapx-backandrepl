@@ -1,6 +1,8 @@
-# 📘 Guida Utente - Sanoid Manager
+# 📘 Guida Utente - DAPX-backandrepl
 
-## Gestione Centralizzata Snapshot e Replica ZFS per Proxmox VE
+## Sistema di Backup e Replica per Proxmox VE
+
+> **© 2025 Domarc S.r.l.** - [www.domarc.it](https://www.domarc.it)
 
 ---
 
@@ -22,9 +24,9 @@
 
 ## 1. Introduzione
 
-### Cos'è Sanoid Manager?
+### Cos'è DAPX-backandrepl?
 
-Sanoid Manager è un'interfaccia web per gestire:
+DAPX-backandrepl è un'interfaccia web sviluppata da Domarc S.r.l. per gestire:
 - **Snapshot ZFS automatici** tramite Sanoid
 - **Replica ZFS** tra nodi Proxmox tramite Syncoid
 - **Registrazione VM** replicate sul nodo di destinazione
@@ -340,7 +342,7 @@ Per sapere quali dataset ZFS sono associati a una VM:
 
 Quando crei un job di replica con **Registra VM** abilitato:
 
-1. Dopo ogni sincronizzazione, Sanoid Manager:
+1. Dopo ogni sincronizzazione, DAPX-backandrepl:
    - Copia il file di configurazione dalla sorgente
    - Lo salva sul nodo destinazione
    - Registra la VM in Proxmox
@@ -606,4 +608,4 @@ Per problemi o suggerimenti:
 
 ---
 
-*Sanoid Manager v1.0.0 - Gestione ZFS per Proxmox*
+*DAPX-backandrepl v1.0.0 - Gestione ZFS per Proxmox*

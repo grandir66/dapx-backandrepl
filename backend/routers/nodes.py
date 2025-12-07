@@ -15,7 +15,11 @@ from services.sanoid_service import sanoid_service
 from services.proxmox_service import proxmox_service
 from services.btrfs_service import btrfs_service
 from services.pbs_service import pbs_service
+from services.ssh_key_service import ssh_key_service
 from routers.auth import get_current_user, require_operator, require_admin, log_audit
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -44,6 +48,9 @@ class NodeCreate(BaseModel):
     btrfs_mount: Optional[str] = None
     btrfs_snapshot_dir: Optional[str] = None
     notes: Optional[str] = None
+    # SSH setup - password per distribuzione automatica chiave
+    ssh_password: Optional[str] = None
+    auto_distribute_key: bool = True
 
 
 class NodeUpdate(BaseModel):
@@ -172,7 +179,14 @@ async def create_node(
     if existing:
         raise HTTPException(status_code=400, detail="Nome nodo già esistente")
     
-    db_node = Node(**node.dict())
+    # Estrai campi non-model
+    ssh_password = node.ssh_password
+    auto_distribute_key = node.auto_distribute_key
+    
+    # Crea dict senza campi extra
+    node_data = node.dict(exclude={'ssh_password', 'auto_distribute_key'})
+    
+    db_node = Node(**node_data)
     db.add(db_node)
     
     log_audit(
@@ -183,7 +197,93 @@ async def create_node(
     
     db.commit()
     db.refresh(db_node)
-    return db_node
+    
+    # Distribuzione automatica chiave SSH
+    ssh_key_result = None
+    if auto_distribute_key:
+        try:
+            # Verifica se esiste una chiave locale
+            key_info = ssh_key_service.get_key_info()
+            if not key_info.exists:
+                # Genera chiave se non esiste
+                success, msg = ssh_key_service.generate_key()
+                if not success:
+                    logger.warning(f"Impossibile generare chiave SSH: {msg}")
+            
+            # Prima prova senza password (potrebbe già avere la chiave)
+            result = await ssh_key_service.distribute_key_to_host(
+                hostname=db_node.hostname,
+                port=db_node.ssh_port,
+                username=db_node.ssh_user,
+                password=None
+            )
+            
+            if result.success or result.already_present:
+                ssh_key_result = {
+                    "success": True,
+                    "message": result.message,
+                    "already_present": result.already_present
+                }
+            elif ssh_password:
+                # Riprova con password
+                result = await ssh_key_service.distribute_key_to_host(
+                    hostname=db_node.hostname,
+                    port=db_node.ssh_port,
+                    username=db_node.ssh_user,
+                    password=ssh_password
+                )
+                ssh_key_result = {
+                    "success": result.success,
+                    "message": result.message,
+                    "already_present": result.already_present
+                }
+            else:
+                ssh_key_result = {
+                    "success": False,
+                    "message": "Chiave SSH non distribuita. Fornire la password root per configurare l'accesso SSH.",
+                    "needs_password": True
+                }
+            
+            # Test connessione
+            if ssh_key_result.get("success") or ssh_key_result.get("already_present"):
+                test_success, test_msg = await ssh_key_service.test_key_auth(
+                    hostname=db_node.hostname,
+                    port=db_node.ssh_port,
+                    username=db_node.ssh_user
+                )
+                ssh_key_result["connection_test"] = {
+                    "success": test_success,
+                    "message": test_msg
+                }
+                
+                # Aggiorna stato online del nodo
+                db_node.is_online = test_success
+                db.commit()
+                
+        except Exception as e:
+            logger.error(f"Errore distribuzione chiave SSH a {node.hostname}: {e}")
+            ssh_key_result = {
+                "success": False,
+                "message": str(e),
+                "needs_password": True
+            }
+    
+    # Costruisci risposta
+    response = {
+        "id": db_node.id,
+        "name": db_node.name,
+        "hostname": db_node.hostname,
+        "ssh_port": db_node.ssh_port,
+        "ssh_user": db_node.ssh_user,
+        "ssh_key_path": db_node.ssh_key_path,
+        "node_type": db_node.node_type,
+        "storage_type": db_node.storage_type,
+        "is_online": db_node.is_online,
+        "is_active": db_node.is_active,
+        "ssh_key_setup": ssh_key_result
+    }
+    
+    return response
 
 
 @router.get("/{node_id}", response_model=NodeResponse)

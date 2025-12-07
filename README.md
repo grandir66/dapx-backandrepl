@@ -1,10 +1,13 @@
-# 🗃️ DAPX-backandrepl (Sanoid Manager)
+# 🗃️ DAPX-backandrepl
 
 **Sistema centralizzato di backup e replica per infrastrutture Proxmox VE**
 
 ![Version](https://img.shields.io/badge/version-3.3.0-blue)
 ![Python](https://img.shields.io/badge/python-3.9+-green)
-![License](https://img.shields.io/badge/license-MIT-orange)
+![License](https://img.shields.io/badge/license-Proprietary-red)
+
+> **© 2025 Domarc S.r.l.** - Tutti i diritti riservati  
+> [www.domarc.it](https://www.domarc.it)
 
 ---
 
@@ -44,13 +47,23 @@
 ### 1. Scarica e installa
 
 ```bash
-# Scarica il pacchetto
-cd /tmp
-wget https://github.com/yourusername/sanoid-manager/releases/download/v1.1.0/sanoid-manager-1.1.0.tar.gz
-tar xzf sanoid-manager-1.1.0.tar.gz
-cd sanoid-manager-1.1.0
+# Clona il repository
+cd /opt
+git clone https://github.com/grandir66/dapx-backandrepl.git
+cd dapx-backandrepl
 
 # Rendi eseguibile e avvia l'installer
+chmod +x install.sh
+./install.sh
+```
+
+Oppure scarica l'ultima release:
+
+```bash
+cd /tmp
+wget https://github.com/grandir66/dapx-backandrepl/archive/refs/tags/v3.3.0.tar.gz
+tar xzf v3.3.0.tar.gz
+cd dapx-backandrepl-3.3.0
 chmod +x install.sh
 ./install.sh
 ```
@@ -573,7 +586,12 @@ pytest tests/test_auth.py -v
 
 ## 📄 Licenza
 
-MIT License - vedi [LICENSE](LICENSE) per dettagli.
+**Licenza Proprietaria** - © 2025 Domarc S.r.l.
+
+Questo software è proprietà esclusiva di Domarc S.r.l. Tutti i diritti riservati.
+L'uso, la copia, la modifica e la distribuzione non autorizzati sono vietati.
+
+Per informazioni sulla licenza commerciale: [info@domarc.it](mailto:info@domarc.it)
 
 ---
 
@@ -582,6 +600,15 @@ MIT License - vedi [LICENSE](LICENSE) per dettagli.
 - [Sanoid/Syncoid](https://github.com/jimsalterjrs/sanoid) - Jim Salter
 - [Proxmox VE](https://www.proxmox.com/)
 - [FastAPI](https://fastapi.tiangolo.com/)
+
+---
+
+## 📞 Contatti
+
+**Domarc S.r.l.**
+- 🌐 Website: [www.domarc.it](https://www.domarc.it)
+- 📧 Email: [info@domarc.it](mailto:info@domarc.it)
+- 📍 Italia
 - [Vue.js](https://vuejs.org/)
 
 ---
