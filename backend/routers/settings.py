@@ -514,14 +514,20 @@ CERTS_DIR = Path(__file__).parent.parent / "certs"
 
 @router.get("/ssl/status")
 async def get_ssl_status(
+    request: Request,
     user: User = Depends(get_current_user)
 ):
     """Ottiene lo stato della configurazione SSL"""
     cert_path = CERTS_DIR / "server.crt"
     key_path = CERTS_DIR / "server.key"
     
+    # Rileva SSL da: variabile ambiente, header X-Forwarded-Proto, o schema richiesta
+    ssl_from_env = os.environ.get("DAPX_SSL", "false").lower() == "true"
+    ssl_from_header = request.headers.get("X-Forwarded-Proto", "").lower() == "https"
+    ssl_from_scheme = request.url.scheme == "https"
+    
     result = {
-        "ssl_enabled": os.environ.get("DAPX_SSL", "false").lower() == "true",
+        "ssl_enabled": ssl_from_env or ssl_from_header or ssl_from_scheme,
         "cert_exists": cert_path.exists(),
         "key_exists": key_path.exists(),
         "cert_path": str(cert_path) if cert_path.exists() else None,
