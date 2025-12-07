@@ -814,7 +814,13 @@
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/>
                     </svg>
-                    Recovery (PBS)
+                    Replica (PBS)
+                </div>
+                <div class="nav-item" :class="{ active: currentPage === 'restore' }" @click="currentPage = 'restore'">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/>
+                    </svg>
+                    Restore (PBS)
                 </div>
                 <div class="nav-item" :class="{ active: currentPage === 'vms' }" @click="currentPage = 'vms'">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2454,8 +2460,19 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label">Storage PBS (sul nodo sorgente)</label>
-                            <input type="text" class="form-input" v-model="newBackupJob.pbs_storage_id" placeholder="es: pbs-backup, PBS-BACK">
-                            <small style="color: var(--text-secondary);">Nome dello storage PBS configurato sul nodo PVE sorgente</small>
+                            <select class="form-input" v-model="newBackupJob.pbs_storage_id" v-if="backupPbsStorages.length > 0">
+                                <option value="">-- Seleziona Storage PBS --</option>
+                                <option v-for="st in backupPbsStorages" :key="st.storage" :value="st.storage">
+                                    {{ st.storage }} ({{ st.server || 'PBS' }})
+                                </option>
+                            </select>
+                            <input type="text" class="form-input" v-model="newBackupJob.pbs_storage_id" placeholder="es: pbs-backup" v-else>
+                            <small style="color: var(--text-secondary);" v-if="backupPbsStorages.length === 0 && newBackupJob.source_node_id">
+                                Nessuno storage PBS trovato sul nodo. Inserisci manualmente.
+                            </small>
+                            <small style="color: var(--text-secondary);" v-else-if="!newBackupJob.source_node_id">
+                                Seleziona prima il nodo sorgente
+                            </small>
                         </div>
                         <div class="form-group">
                             <label class="form-label">Modalità Backup</label>
@@ -3193,6 +3210,138 @@
                     <div class="modal-footer">
                         <button class="btn btn-secondary" @click="showEditRecoveryJobModal = false">Annulla</button>
                         <button class="btn btn-primary" @click="saveRecoveryJob">💾 Salva Modifiche</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- PAGINA RESTORE PBS -->
+            <div v-if="currentPage === 'restore'">
+                <div class="page-header">
+                    <h1 class="page-title">🔄 Restore da PBS</h1>
+                    <p class="page-subtitle">Sfoglia e ripristina backup esistenti da Proxmox Backup Server</p>
+                </div>
+                
+                <div class="card">
+                    <h3 style="margin-bottom: 1rem;">📂 Seleziona Server PBS</h3>
+                    <p style="color: #9ca3af; margin-bottom: 1rem;">Seleziona un nodo PBS per visualizzare i backup disponibili e procedere al restore.</p>
+                    
+                    <div v-if="pbsNodes.length === 0" class="empty-state">
+                        <p>Nessun nodo PBS configurato. Aggiungi un nodo PBS dalla pagina Nodi.</p>
+                    </div>
+                    
+                    <div class="table-container" v-else>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Nome PBS</th>
+                                    <th>Host</th>
+                                    <th>Datastore</th>
+                                    <th>Azioni</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="pbs in pbsNodes" :key="pbs.id">
+                                    <td><strong>{{ pbs.name }}</strong></td>
+                                    <td>{{ pbs.host }}</td>
+                                    <td>{{ pbs.pbs_datastore || 'Default' }}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-primary" @click="browseRestorePbs(pbs)">
+                                            📂 Sfoglia Backup
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Lista backup del PBS selezionato -->
+                <div class="card" v-if="restorePbsBackups.length > 0" style="margin-top: 1rem;">
+                    <h3 style="margin-bottom: 1rem;">📦 Backup disponibili su {{ selectedRestorePbs?.name }}</h3>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>VM/CT</th>
+                                    <th>Tipo</th>
+                                    <th>Backup ID</th>
+                                    <th>Data</th>
+                                    <th>Size</th>
+                                    <th>Azioni</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="backup in restorePbsBackups" :key="backup.backup_id">
+                                    <td><strong>{{ backup.vm_type?.toUpperCase() || 'VM' }} #{{ backup.vmid }}</strong></td>
+                                    <td>{{ backup.vm_type || 'qemu' }}</td>
+                                    <td style="font-family: monospace; font-size: 0.85rem;">{{ backup.backup_id }}</td>
+                                    <td>{{ formatDate(backup.backup_time) }}</td>
+                                    <td>{{ formatSize(backup.size) }}</td>
+                                    <td>
+                                        <button class="btn btn-sm" style="background: #10b981;" @click="startRestore(backup)">
+                                            🔄 Restore
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="card" v-if="selectedRestorePbs && restorePbsBackups.length === 0" style="margin-top: 1rem;">
+                    <div class="empty-state">
+                        <p>Nessun backup trovato sul PBS {{ selectedRestorePbs?.name }}</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- MODAL RESTORE -->
+            <div class="modal-overlay" v-if="showRestoreModal" @click.self="showRestoreModal = false">
+                <div class="modal">
+                    <div class="modal-header">
+                        <h2>🔄 Restore VM/CT da PBS</h2>
+                        <button class="modal-close" @click="showRestoreModal = false">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label class="form-label">Backup da ripristinare</label>
+                            <input type="text" class="form-input" :value="restoreData.backup_id" disabled>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">VM/CT Originale</label>
+                            <input type="text" class="form-input" :value="restoreData.vm_type?.toUpperCase() + ' #' + restoreData.vmid" disabled>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Nodo Destinazione *</label>
+                            <select class="form-input" v-model="restoreData.dest_node_id" required>
+                                <option value="">Seleziona nodo...</option>
+                                <option v-for="node in pveNodes" :key="node.id" :value="node.id">
+                                    {{ node.name }} ({{ node.host }})
+                                </option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">VMID Destinazione *</label>
+                            <input type="number" class="form-input" v-model="restoreData.dest_vmid" placeholder="Lascia vuoto per ID automatico">
+                            <small style="color: #9ca3af;">Lascia vuoto per usare il prossimo ID disponibile</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Storage Destinazione</label>
+                            <input type="text" class="form-input" v-model="restoreData.dest_storage" placeholder="es: local-lvm, zfs-pool">
+                            <small style="color: #9ca3af;">Lascia vuoto per usare lo storage di default</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-check">
+                                <input type="checkbox" v-model="restoreData.start_after_restore">
+                                <span>Avvia VM dopo il restore</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" @click="showRestoreModal = false">Annulla</button>
+                        <button class="btn btn-primary" @click="executeRestore" :disabled="!restoreData.dest_node_id">
+                            🔄 Esegui Restore
+                        </button>
                     </div>
                 </div>
             </div>
@@ -4517,9 +4666,25 @@
                     loading: false
                 });
                 
+                // Restore from PBS (pagina dedicata)
+                const selectedRestorePbs = ref(null);
+                const restorePbsBackups = ref([]);
+                const showRestoreModal = ref(false);
+                const restoreData = ref({
+                    backup_id: '',
+                    vmid: '',
+                    vm_type: 'qemu',
+                    pbs_node_id: '',
+                    dest_node_id: '',
+                    dest_vmid: '',
+                    dest_storage: '',
+                    start_after_restore: false
+                });
+                
                 // Backup Jobs
                 const backupJobs = ref([]);
                 const sourceVmsForBackup = ref([]);
+                const backupPbsStorages = ref([]);
                 const showEditBackupJobModal = ref(false);
                 const editingBackupJob = ref(null);
                 const newBackupJob = ref({
@@ -4529,6 +4694,7 @@
                     vm_type: 'qemu',
                     vm_name: '',
                     pbs_node_id: '',
+                    pbs_storage_id: '',
                     backup_mode: 'snapshot',
                     backup_compress: 'zstd',
                     keep_last: 3,
@@ -4810,9 +4976,28 @@
                         // L'API restituisce direttamente la lista o un oggetto con 'vms'
                         sourceVmsForBackup.value = Array.isArray(resp.data) ? resp.data : (resp.data.vms || []);
                         console.log('VM caricate per backup:', sourceVmsForBackup.value);
+                        // Carica anche gli storage PBS disponibili sul nodo
+                        loadBackupPbsStorages();
                     } catch (e) {
                         console.error('Errore caricamento VM:', e);
                         sourceVmsForBackup.value = [];
+                    }
+                };
+                
+                const loadBackupPbsStorages = async () => {
+                    backupPbsStorages.value = [];
+                    if (!newBackupJob.value.source_node_id) return;
+                    
+                    try {
+                        const resp = await axios.get(`${API}/recovery-jobs/node/${newBackupJob.value.source_node_id}/pbs-storages`);
+                        backupPbsStorages.value = resp.data.pbs_storages || [];
+                        console.log('Storage PBS disponibili:', backupPbsStorages.value);
+                        // Auto-seleziona il primo storage se disponibile
+                        if (backupPbsStorages.value.length > 0 && !newBackupJob.value.pbs_storage_id) {
+                            newBackupJob.value.pbs_storage_id = backupPbsStorages.value[0].storage;
+                        }
+                    } catch (e) {
+                        console.error('Errore caricamento storage PBS:', e);
                     }
                 };
                 
@@ -4887,6 +5072,81 @@
                         loadBackupJobs();
                     } catch (e) {
                         showToast(e.response?.data?.detail || 'Errore aggiornamento', 'error');
+                    }
+                };
+                
+                // === RESTORE FROM PBS ===
+                const browseRestorePbs = async (pbs) => {
+                    selectedRestorePbs.value = pbs;
+                    restorePbsBackups.value = [];
+                    showToast(`Caricamento backup da ${pbs.name}...`, 'info');
+                    
+                    try {
+                        const resp = await axios.get(`${API}/recovery-jobs/pbs-nodes/${pbs.id}/backups`);
+                        restorePbsBackups.value = resp.data.backups || [];
+                        if (restorePbsBackups.value.length === 0) {
+                            showToast(`Nessun backup trovato su ${pbs.name}`, 'warning');
+                        } else {
+                            showToast(`Trovati ${restorePbsBackups.value.length} backup`, 'success');
+                        }
+                    } catch (e) {
+                        console.error('Errore caricamento backup PBS:', e);
+                        showToast(e.response?.data?.detail || 'Errore caricamento backup', 'error');
+                    }
+                };
+                
+                const startRestore = (backup) => {
+                    restoreData.value = {
+                        backup_id: backup.backup_id,
+                        vmid: backup.vmid,
+                        vm_type: backup.vm_type || 'qemu',
+                        pbs_node_id: selectedRestorePbs.value?.id,
+                        dest_node_id: '',
+                        dest_vmid: backup.vmid,
+                        dest_storage: '',
+                        start_after_restore: false
+                    };
+                    showRestoreModal.value = true;
+                };
+                
+                const executeRestore = async () => {
+                    if (!restoreData.value.dest_node_id) {
+                        showToast('Seleziona un nodo di destinazione', 'error');
+                        return;
+                    }
+                    
+                    try {
+                        showToast('Avvio restore in corso...', 'info');
+                        
+                        // Usa l'endpoint di restore esistente
+                        const payload = {
+                            pbs_node_id: restoreData.value.pbs_node_id,
+                            backup_id: restoreData.value.backup_id,
+                            dest_node_id: restoreData.value.dest_node_id,
+                            dest_vmid: restoreData.value.dest_vmid || null,
+                            dest_storage: restoreData.value.dest_storage || null,
+                            vm_type: restoreData.value.vm_type
+                        };
+                        
+                        const resp = await axios.post(`${API}/recovery-jobs/restore`, payload);
+                        
+                        showRestoreModal.value = false;
+                        showToast('Restore avviato con successo!', 'success');
+                        
+                        // Se richiesto, avvia la VM dopo il restore
+                        if (restoreData.value.start_after_restore && resp.data.vmid) {
+                            setTimeout(async () => {
+                                try {
+                                    await axios.post(`${API}/nodes/${restoreData.value.dest_node_id}/vms/${resp.data.vmid}/start`);
+                                    showToast('VM avviata', 'success');
+                                } catch (e) {
+                                    console.error('Errore avvio VM:', e);
+                                }
+                            }, 5000);
+                        }
+                    } catch (e) {
+                        console.error('Errore restore:', e);
+                        showToast(e.response?.data?.detail || 'Errore durante il restore', 'error');
                     }
                 };
                 
@@ -6144,12 +6404,19 @@
                         vm_type: vm.type || 'qemu',
                         vm_name: vm.name || '',
                         pbs_node_id: '',
+                        pbs_storage_id: '',
                         backup_mode: 'snapshot',
                         backup_compress: 'zstd',
                         keep_last: 3,
                         schedule: '',
                         is_active: true
                     };
+                    
+                    // Carica le VM del nodo (se non già caricate) e gli storage PBS
+                    if (selectedVmNodeId.value) {
+                        loadBackupPbsStorages();
+                    }
+                    
                     currentPage.value = 'backup';
                     showToast(`Compila i campi mancanti per il backup di ${vm.name || vm.vmid}`, 'info');
                 };
@@ -6314,8 +6581,11 @@
                     // Recovery Jobs (PBS)
                     recoveryJobs, pbsNodes, pveNodes, showAddRecoveryJobModal, sourceVmsForRecovery, newRecoveryJob,
                     // Backup Jobs
-                    backupJobs, sourceVmsForBackup, newBackupJob, showEditBackupJobModal, editingBackupJob,
-                    loadBackupJobs, loadSourceVmsForBackup, selectBackupVm, createBackupJob, runBackupJob, deleteBackupJob, editBackupJob, saveBackupJob,
+                    backupJobs, sourceVmsForBackup, backupPbsStorages, newBackupJob, showEditBackupJobModal, editingBackupJob,
+                    loadBackupJobs, loadSourceVmsForBackup, loadBackupPbsStorages, selectBackupVm, createBackupJob, runBackupJob, deleteBackupJob, editBackupJob, saveBackupJob,
+                    // Restore from PBS
+                    selectedRestorePbs, restorePbsBackups, showRestoreModal, restoreData,
+                    browseRestorePbs, startRestore, executeRestore,
                     settings, authSettings, notifSettings,
                     showNodeModal, showSyncJobModal, editingSyncJobId, showUserModal, editingUser, showInfoModal,
                     // SSH Keys

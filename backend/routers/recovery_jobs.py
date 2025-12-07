@@ -964,6 +964,103 @@ async def list_pbs_backups(
     }
 
 
+# ============== Direct Restore Endpoint ==============
+
+class DirectRestoreRequest(BaseModel):
+    """Richiesta di restore diretto da un backup PBS esistente"""
+    pbs_node_id: int = Field(..., gt=0, description="ID nodo PBS sorgente")
+    backup_id: str = Field(..., min_length=1, description="ID del backup PBS")
+    dest_node_id: int = Field(..., gt=0, description="ID nodo PVE destinazione")
+    dest_vmid: Optional[int] = Field(None, gt=0, le=999999, description="VMID destinazione (opzionale)")
+    dest_storage: Optional[str] = Field(None, description="Storage destinazione (opzionale)")
+    vm_type: str = Field(default="qemu", pattern="^(qemu|lxc)$", description="Tipo VM")
+
+
+@router.post("/restore")
+async def direct_restore(
+    request: DirectRestoreRequest,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(require_operator),
+    db: Session = Depends(get_db)
+):
+    """
+    Esegue un restore diretto da un backup PBS esistente.
+    Questo endpoint permette di ripristinare qualsiasi backup presente nel PBS,
+    anche quelli non creati da questo applicativo.
+    """
+    # Verifica nodo PBS
+    pbs_node = db.query(Node).filter(
+        Node.id == request.pbs_node_id,
+        Node.node_type == NodeType.PBS.value
+    ).first()
+    
+    if not pbs_node:
+        raise HTTPException(status_code=404, detail="Nodo PBS non trovato")
+    
+    # Verifica nodo destinazione
+    dest_node = db.query(Node).filter(
+        Node.id == request.dest_node_id,
+        Node.node_type == NodeType.PVE.value
+    ).first()
+    
+    if not dest_node:
+        raise HTTPException(status_code=404, detail="Nodo PVE destinazione non trovato")
+    
+    # Estrai VMID dal backup_id se non specificato
+    vmid = request.dest_vmid
+    if not vmid:
+        # Prova a estrarre il VMID dal backup_id (formato: vm/100/2024-01-01...)
+        import re
+        match = re.search(r'(vm|ct)/(\d+)/', request.backup_id)
+        if match:
+            vmid = int(match.group(2))
+        else:
+            raise HTTPException(status_code=400, detail="VMID non specificato e non estraibile dal backup_id")
+    
+    # Log dell'operazione
+    log_audit(db, user.id, "restore_started", "restore", 
+              resource_id=vmid, details=f"Restore da PBS {pbs_node.name} verso {dest_node.name}")
+    
+    # Esegui il restore
+    datastore = pbs_node.pbs_datastore or "datastore1"
+    storage = request.dest_storage
+    
+    result = await pbs_service.run_restore(
+        dest_node_hostname=dest_node.hostname,
+        vm_id=vmid,
+        pbs_hostname=pbs_node.hostname,
+        datastore=datastore,
+        backup_id=request.backup_id,
+        pbs_user=f"{pbs_node.ssh_user}@pam",
+        pbs_password=pbs_node.pbs_password,
+        pbs_fingerprint=pbs_node.pbs_fingerprint,
+        dest_vm_id=vmid,
+        dest_storage=storage,
+        vm_type=request.vm_type,
+        start_vm=False,
+        unique=True,
+        overwrite=True,
+        dest_node_port=dest_node.ssh_port,
+        dest_node_user=dest_node.ssh_user,
+        dest_node_key=dest_node.ssh_key_path or "/root/.ssh/id_rsa"
+    )
+    
+    if not result.get("success"):
+        log_audit(db, user.id, "restore_failed", "restore",
+                  resource_id=vmid, details=result.get("error", "Errore sconosciuto"))
+        raise HTTPException(status_code=500, detail=result.get("error", "Errore durante il restore"))
+    
+    log_audit(db, user.id, "restore_completed", "restore",
+              resource_id=vmid, details=f"Restore completato su {dest_node.name} come VM {vmid}")
+    
+    return {
+        "success": True,
+        "message": f"Restore completato con successo",
+        "vmid": vmid,
+        "node": dest_node.name
+    }
+
+
 # ============== Storage & VMID Endpoints ==============
 
 @router.get("/node/{node_id}/storages")
