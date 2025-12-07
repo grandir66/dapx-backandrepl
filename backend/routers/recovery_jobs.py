@@ -26,6 +26,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# Helper
+async def _build_vm_name_map(db: Session) -> dict:
+    vm_names = {}
+    pve_nodes = db.query(Node).filter(Node.node_type == NodeType.PVE.value).all()
+    for node in pve_nodes:
+        if not node.hostname:
+            continue
+        try:
+            guests = await proxmox_service.get_all_guests(
+                hostname=node.hostname,
+                port=node.ssh_port,
+                username=node.ssh_user,
+                key_path=node.ssh_key_path
+            )
+            for vm in guests:
+                vmid = vm.get("vmid")
+                name = vm.get("name", "")
+                vm_type = vm.get("type", "qemu")
+                if vmid is not None:
+                    vm_names[str(vmid)] = {"name": name, "type": vm_type}
+        except Exception as e:
+            logger.warning(f"Errore recupero nomi VM da {node.name}: {e}")
+    return vm_names
+
+
 # ============== Schemas ==============
 
 class RecoveryJobCreate(BaseModel):
@@ -1026,28 +1051,11 @@ async def list_pbs_backups(
                     key_path=pve_node.ssh_key_path
                 )
                 
-                if result.success and result.stdout.strip():
+    vm_names = await _build_vm_name_map(db)
+    if result.success and result.stdout.strip():
                     try:
                         all_backups = json.loads(result.stdout)
-                        
-                        # Recupera i nomi delle VM/CT dal cluster
-                        vm_names = {}
-                        try:
-                            # Ottieni lista VM/CT dal nodo PVE e usa nomi reali
-                            guests = await proxmox_service.get_all_guests(
-                                hostname=pve_node.hostname,
-                                port=pve_node.ssh_port,
-                                username=pve_node.ssh_user,
-                                key_path=pve_node.ssh_key_path
-                            )
-                            for vm in guests:
-                                vmid = vm.get("vmid")
-                                name = vm.get("name", "")
-                                vm_type = vm.get("type", "qemu")
-                                if isinstance(vmid, (int, str)):
-                                    vm_names[str(vmid)] = {"name": name, "type": vm_type}
-                        except Exception as e:
-                            logger.warning(f"Errore recupero nomi VM: {e}")
+            
                         
                         for backup in all_backups:
                             # Converti formato PVE a formato standard
