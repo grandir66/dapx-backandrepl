@@ -1140,11 +1140,9 @@ async def list_pbs_backups(
                     key_path=pve_node.ssh_key_path
                 )
                 
-    vm_names = await _build_vm_name_map(db)
-    if result.success and result.stdout.strip():
+                if result.success and result.stdout.strip():
                     try:
                         all_backups = json.loads(result.stdout)
-            
                         
                         for backup in all_backups:
                             # Converti formato PVE a formato standard
@@ -1159,14 +1157,12 @@ async def list_pbs_backups(
                             # Formato: PBS-BACK:backup/ct/101/2025-11-19T22:26:27Z
                             vm_type = "qemu"
                             backup_id = volid
-                            if "/ct/" in volid:
+                            subtype = backup.get("subtype", "")
+                            if "/ct/" in volid or subtype == "lxc":
                                 vm_type = "lxc"
                             
-                            # Ottieni nome VM se disponibile
-                            vm_name = ""
-                            vmid_key = str(vmid) if vmid is not None else ""
-                            if vmid_key in vm_names:
-                                vm_name = vm_names[vmid_key].get("name", "")
+                            # Usa notes di PBS come nome VM (contiene il nome originale)
+                            vm_name = backup.get("notes", "") or f"VM #{vmid}"
                             
                             # Filtra per VM ID se specificato
                             if vm_id and vmid != vm_id:
