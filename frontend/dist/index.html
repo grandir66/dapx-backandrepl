@@ -2449,8 +2449,13 @@
                             <label class="form-label">Nodo PBS Destinazione</label>
                             <select class="form-input" v-model="newBackupJob.pbs_node_id">
                                 <option value="">-- Seleziona PBS --</option>
-                                <option v-for="node in pbsNodes" :key="node.id" :value="node.id">{{ node.name }}</option>
+                                <option v-for="node in pbsNodes" :key="node.id" :value="node.id">{{ node.name }} ({{ node.hostname }})</option>
                             </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Storage PBS (sul nodo sorgente)</label>
+                            <input type="text" class="form-input" v-model="newBackupJob.pbs_storage_id" placeholder="es: pbs-backup, PBS-BACK">
+                            <small style="color: var(--text-secondary);">Nome dello storage PBS configurato sul nodo PVE sorgente</small>
                         </div>
                         <div class="form-group">
                             <label class="form-label">Modalità Backup</label>

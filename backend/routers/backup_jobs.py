@@ -317,25 +317,24 @@ async def execute_backup_task(job_id: int, db_path: str):
         job.last_run = start_time
         db.commit()
         
-        # Log inizio
-        log = JobLog(
-            job_type="backup",
-            job_id=job.id,
-            job_name=job.name,
-            phase="backup",
-            status="running",
-            message=f"Avvio backup VM {job.vm_id} verso PBS",
-            started_at=start_time
-        )
-        db.add(log)
-        db.commit()
-        
         # Ottieni nodi
         source_node = db.query(Node).filter(Node.id == job.source_node_id).first()
         pbs_node = db.query(Node).filter(Node.id == job.pbs_node_id).first()
         
         if not source_node or not pbs_node:
             raise Exception("Nodi non trovati")
+        
+        # Log inizio
+        log = JobLog(
+            job_type="backup",
+            job_id=job.id,
+            node_name=source_node.name,
+            status="running",
+            message=f"Avvio backup VM {job.vm_id} ({job.name}) verso PBS {pbs_node.name}",
+            started_at=start_time
+        )
+        db.add(log)
+        db.commit()
         
         # Costruisci comando backup
         vm_cmd = "qm" if job.vm_type == "qemu" else "pct"
@@ -410,7 +409,7 @@ async def execute_backup_task(job_id: int, db_path: str):
         
         job.last_duration = duration
         log.completed_at = end_time
-        log.duration_seconds = duration
+        log.duration = duration
         
         db.commit()
         
