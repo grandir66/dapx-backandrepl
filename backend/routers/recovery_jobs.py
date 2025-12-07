@@ -51,6 +51,61 @@ async def _build_vm_name_map(db: Session) -> dict:
     return vm_names
 
 
+async def _storage_exists(node: Node, storage_id: str) -> bool:
+    """Controlla se uno storage esiste sul nodo PVE."""
+    cmd = f"pvesm status {storage_id} 2>/dev/null"
+    result = await ssh_service.execute(
+        hostname=node.hostname,
+        command=cmd,
+        port=node.ssh_port,
+        username=node.ssh_user,
+        key_path=node.ssh_key_path
+    )
+    return result.success
+
+
+async def _ensure_pbs_storage_registered(
+    node: Node,
+    storage_name: str,
+    pbs_node: Node,
+    datastore: str
+) -> str:
+    """Assicura che lo storage PBS sia registrato sul nodo PVE di destinazione."""
+    wanted_storage = storage_name or "pbs-backup"
+    if await _storage_exists(node, wanted_storage):
+        return wanted_storage
+
+    repo = datastore or pbs_node.pbs_datastore or "datastore1"
+    env_prefix = ""
+    if pbs_node.pbs_password:
+        env_prefix = f"PBS_PASSWORD='{pbs_node.pbs_password}' "
+
+    cmd_parts = [
+        "pvesm", "add", "pbs", wanted_storage,
+        "--server", pbs_node.hostname,
+        "--repository", repo,
+        "--username", f"{pbs_node.ssh_user}@pam"
+    ]
+    if pbs_node.pbs_fingerprint:
+        cmd_parts.extend(["--fingerprint", pbs_node.pbs_fingerprint])
+
+    cmd = env_prefix + " ".join(cmd_parts) + " 2>/dev/null"
+    result = await ssh_service.execute(
+        hostname=node.hostname,
+        command=cmd,
+        port=node.ssh_port,
+        username=node.ssh_user,
+        key_path=node.ssh_key_path
+    )
+
+    if not result.success:
+        raise Exception(
+            f"Registrazione storage PBS '{wanted_storage}' fallita su {node.name}: {result.stderr}"
+        )
+
+    return wanted_storage
+
+
 # ============== Schemas ==============
 
 class RecoveryJobCreate(BaseModel):
@@ -417,6 +472,36 @@ async def execute_recovery_job_task(job_id: int, triggered_by: Optional[int] = N
         
         restore_start = datetime.utcnow()
         
+        # Assicura storage PBS sul nodo destinazione
+        try:
+            storage_name = await _ensure_pbs_storage_registered(dest_node, job.pbs_storage_id, pbs_node, datastore)
+            if storage_name != job.pbs_storage_id:
+                job.pbs_storage_id = storage_name
+                db.commit()
+        except Exception as storage_error:
+            logger.error(f"[Recovery Job {job_id}] Impossibile registrare storage PBS: {storage_error}")
+            job.current_status = RecoveryJobStatus.FAILED.value
+            job.last_status = "failed"
+            job.last_error = str(storage_error)[:1000]
+            log_entry_main.status = "failed"
+            log_entry_main.message = f"Storage PBS non disponibile: {storage_error}"
+            log_entry_main.error = str(storage_error)[:2000]
+            log_entry_main.completed_at = datetime.utcnow()
+            db.commit()
+            if job.notify_on_each_run:
+                await notification_service.send_job_notification(
+                    job_name=job.name,
+                    status="failed",
+                    source=f"{source_node.name}:vm/{job.vm_id}",
+                    destination=f"{dest_node.name}:vm/{job.dest_vm_id or job.vm_id}",
+                    duration=0,
+                    error=str(storage_error),
+                    details="Storage PBS non configurato sul nodo destinazione",
+                    job_id=job_id,
+                    is_scheduled=bool(job.schedule)
+                )
+            return
+
         # Esegui restore
         restore_result = await pbs_service.run_restore(
             dest_node_hostname=dest_node.hostname,
