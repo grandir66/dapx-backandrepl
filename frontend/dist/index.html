@@ -3467,17 +3467,17 @@
                                     </td>
                                     <td>
                                         <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                                            <button class="btn btn-sm" style="background: #1976d2;" @click="createBackupJobFromVm(vm)" title="Crea job di backup verso PBS">
+                                            <button class="btn btn-primary btn-sm" @click="createBackupJobFromVm(vm)" title="Crea job di backup verso PBS">
                                                 ☁️ Backup PBS
                                             </button>
-                                            <button class="btn btn-sm" style="background: #7b1fa2;" @click="createRecoveryJobFromVm(vm)" title="Crea job di replica via PBS">
+                                            <button class="btn btn-primary btn-sm" @click="createRecoveryJobFromVm(vm)" title="Crea job di replica via PBS">
                                                 🔄 Replica PBS
                                             </button>
-                                            <button class="btn btn-sm" style="background: #388e3c;" @click="createSyncJobFromVm(vm)" title="Crea job di replica ZFS/BTRFS">
+                                            <button class="btn btn-primary btn-sm" @click="createSyncJobFromVm(vm)" title="Crea job di replica ZFS/BTRFS">
                                                 ⚡ Replica ZFS
                                             </button>
                                             <button class="btn btn-secondary btn-sm" @click="showVmSnapshots(vm)" title="Visualizza snapshot locali">
-                                                📷
+                                                📷 Snapshot
                                             </button>
                                         </div>
                                     </td>
