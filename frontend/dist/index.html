@@ -3255,36 +3255,74 @@
                     </div>
                 </div>
                 
-                <!-- Lista backup del PBS selezionato -->
+                <!-- Lista backup del PBS selezionato - Raggruppati per VM -->
                 <div class="card" v-if="restorePbsBackups.length > 0" style="margin-top: 1rem;">
-                    <h3 style="margin-bottom: 1rem;">📦 Backup disponibili su {{ selectedRestorePbs?.name }}</h3>
-                    <div class="table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>VM/CT</th>
-                                    <th>Tipo</th>
-                                    <th>Backup ID</th>
-                                    <th>Data</th>
-                                    <th>Size</th>
-                                    <th>Azioni</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr v-for="backup in restorePbsBackups" :key="backup.backup_id">
-                                    <td><strong>{{ backup.vm_type?.toUpperCase() || 'VM' }} #{{ backup.vmid }}</strong></td>
-                                    <td>{{ backup.vm_type || 'qemu' }}</td>
-                                    <td style="font-family: monospace; font-size: 0.85rem;">{{ backup.backup_id }}</td>
-                                    <td>{{ formatDate(backup.backup_time) }}</td>
-                                    <td>{{ formatSize(backup.size) }}</td>
-                                    <td>
-                                        <button class="btn btn-sm" style="background: #10b981;" @click="startRestore(backup)">
-                                            🔄 Restore
-                                        </button>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
+                    <h3 style="margin-bottom: 1rem;">
+                        📦 Backup disponibili su {{ selectedRestorePbs?.name }}
+                        <span style="font-size: 0.8em; color: var(--text-secondary); margin-left: 1rem;">
+                            {{ Object.keys(groupedRestoreBackups).length }} VM/CT • {{ restorePbsBackups.length }} backup totali
+                        </span>
+                    </h3>
+                    
+                    <!-- Gruppi VM/CT -->
+                    <div v-for="(backups, vmKey) in groupedRestoreBackups" :key="vmKey" 
+                         style="border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 0.75rem; overflow: hidden;">
+                        
+                        <!-- Header gruppo (cliccabile) -->
+                        <div @click="toggleBackupGroup(vmKey)" 
+                             style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; background: var(--bg-secondary); cursor: pointer;"
+                             :style="{ background: expandedBackupGroups[vmKey] ? 'var(--bg-tertiary)' : 'var(--bg-secondary)' }">
+                            <div style="display: flex; align-items: center; gap: 1rem;">
+                                <span style="font-size: 1.2em;">{{ expandedBackupGroups[vmKey] ? '📂' : '📁' }}</span>
+                                <div>
+                                    <strong style="font-size: 1.1em;">
+                                        {{ backups[0].vm_name || (backups[0].vm_type?.toUpperCase() || 'VM') + ' #' + backups[0].vmid }}
+                                    </strong>
+                                    <span v-if="backups[0].vm_name" style="color: var(--text-secondary); margin-left: 0.5rem; font-size: 0.9em;">
+                                        ({{ backups[0].vm_type?.toUpperCase() }} #{{ backups[0].vmid }})
+                                    </span>
+                                    <span class="badge badge-secondary" style="margin-left: 0.5rem;">{{ backups.length }} backup</span>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 1rem;">
+                                <span style="color: var(--text-secondary); font-size: 0.9em;">
+                                    Ultimo: {{ formatDate(backups[0].backup_time) }}
+                                </span>
+                                <button class="btn btn-sm" style="background: #10b981;" 
+                                        @click.stop="startRestore(backups[0])" title="Restore ultimo backup">
+                                    🔄 Ultimo
+                                </button>
+                                <span style="color: var(--text-secondary);">{{ expandedBackupGroups[vmKey] ? '▲' : '▼' }}</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Lista versioni (espandibile) -->
+                        <div v-if="expandedBackupGroups[vmKey]" style="max-height: 300px; overflow-y: auto;">
+                            <table class="data-table" style="margin: 0;">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 40%;">Backup ID</th>
+                                        <th style="width: 25%;">Data</th>
+                                        <th style="width: 20%;">Size</th>
+                                        <th style="width: 15%;">Azione</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="backup in backups" :key="backup.backup_id">
+                                        <td style="font-family: monospace; font-size: 0.85rem;">
+                                            {{ backup.backup_id.split('/').slice(-1)[0] || backup.backup_id }}
+                                        </td>
+                                        <td>{{ formatDate(backup.backup_time) }}</td>
+                                        <td>{{ formatSize(backup.size) }}</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-primary" @click="startRestore(backup)">
+                                                🔄
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
                 
@@ -4670,6 +4708,7 @@
                 const selectedRestorePbs = ref(null);
                 const restorePbsBackups = ref([]);
                 const showRestoreModal = ref(false);
+                const expandedBackupGroups = ref({});
                 const restoreData = ref({
                     backup_id: '',
                     vmid: '',
@@ -4680,6 +4719,36 @@
                     dest_storage: '',
                     start_after_restore: false
                 });
+                
+                // Computed: raggruppa backup per VM/CT ID
+                const groupedRestoreBackups = computed(() => {
+                    const groups = {};
+                    for (const backup of restorePbsBackups.value) {
+                        const key = `${backup.vm_type || 'vm'}_${backup.vmid}`;
+                        if (!groups[key]) {
+                            groups[key] = [];
+                        }
+                        groups[key].push(backup);
+                    }
+                    // Ordina ogni gruppo per data (più recente prima)
+                    for (const key in groups) {
+                        groups[key].sort((a, b) => (b.backup_time || 0) - (a.backup_time || 0));
+                    }
+                    // Ordina i gruppi per VMID
+                    const sortedGroups = {};
+                    Object.keys(groups).sort((a, b) => {
+                        const vmidA = parseInt(a.split('_')[1]) || 0;
+                        const vmidB = parseInt(b.split('_')[1]) || 0;
+                        return vmidA - vmidB;
+                    }).forEach(key => {
+                        sortedGroups[key] = groups[key];
+                    });
+                    return sortedGroups;
+                });
+                
+                const toggleBackupGroup = (vmKey) => {
+                    expandedBackupGroups.value[vmKey] = !expandedBackupGroups.value[vmKey];
+                };
                 
                 // Backup Jobs
                 const backupJobs = ref([]);
@@ -6590,6 +6659,7 @@
                     loadBackupJobs, loadSourceVmsForBackup, loadBackupPbsStorages, selectBackupVm, createBackupJob, runBackupJob, deleteBackupJob, editBackupJob, saveBackupJob,
                     // Restore from PBS
                     selectedRestorePbs, restorePbsBackups, showRestoreModal, restoreData,
+                    expandedBackupGroups, groupedRestoreBackups, toggleBackupGroup,
                     browseRestorePbs, startRestore, executeRestore,
                     settings, authSettings, notifSettings,
                     showNodeModal, showSyncJobModal, editingSyncJobId, showUserModal, editingUser, showInfoModal,

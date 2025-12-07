@@ -1028,11 +1028,36 @@ async def list_pbs_backups(
                 if result.success and result.stdout.strip():
                     try:
                         all_backups = json.loads(result.stdout)
+                        
+                        # Recupera i nomi delle VM/CT dal cluster
+                        vm_names = {}
+                        try:
+                            # Ottieni lista VM (qemu)
+                            vm_result = await ssh_service.execute(
+                                hostname=pve_node.hostname,
+                                command="pvesh get /cluster/resources --type vm --output-format json 2>/dev/null",
+                                port=pve_node.ssh_port,
+                                username=pve_node.ssh_user,
+                                key_path=pve_node.ssh_key_path
+                            )
+                            if vm_result.success:
+                                vms = json.loads(vm_result.stdout)
+                                for vm in vms:
+                                    vmid = vm.get("vmid")
+                                    name = vm.get("name", "")
+                                    vm_type = "lxc" if vm.get("type") == "lxc" else "qemu"
+                                    if vmid:
+                                        vm_names[vmid] = {"name": name, "type": vm_type}
+                        except Exception as e:
+                            logger.warning(f"Errore recupero nomi VM: {e}")
+                        
                         for backup in all_backups:
                             # Converti formato PVE a formato standard
                             volid = backup.get("volid", "")
                             vmid = backup.get("vmid")
                             ctime = backup.get("ctime", 0)
+                            # Converti timestamp Unix (secondi) a millisecondi per JavaScript
+                            ctime_ms = ctime * 1000 if ctime else 0
                             size = backup.get("size", 0)
                             
                             # Estrai tipo e backup_id dal volid
@@ -1042,6 +1067,11 @@ async def list_pbs_backups(
                             if "/ct/" in volid:
                                 vm_type = "lxc"
                             
+                            # Ottieni nome VM se disponibile
+                            vm_name = ""
+                            if vmid in vm_names:
+                                vm_name = vm_names[vmid].get("name", "")
+                            
                             # Filtra per VM ID se specificato
                             if vm_id and vmid != vm_id:
                                 continue
@@ -1050,8 +1080,9 @@ async def list_pbs_backups(
                                 "backup-id": backup_id,
                                 "backup_id": backup_id,
                                 "vmid": vmid,
+                                "vm_name": vm_name,
                                 "vm_type": vm_type,
-                                "backup_time": ctime,
+                                "backup_time": ctime_ms,
                                 "size": size,
                                 "volid": volid
                             })
