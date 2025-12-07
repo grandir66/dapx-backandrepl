@@ -3160,8 +3160,13 @@
                                         <td><span class="badge badge-info">{{ vm.type }}</span></td>
                                         <td><span class="badge" :class="vm.status === 'running' ? 'badge-success' : 'badge-warning'">{{ vm.status }}</span></td>
                                         <td>
-                                            <button class="btn btn-secondary btn-sm" @click="getVmDatasets(vm)" style="margin-right: 4px;">Dataset</button>
-                                            <button class="btn btn-primary btn-sm" @click="showVmSnapshots(vm)">📷 Snapshot</button>
+                                            <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                                <button class="btn btn-secondary btn-sm" @click="getVmDatasets(vm)" title="Mostra dataset">💾</button>
+                                                <button class="btn btn-primary btn-sm" @click="showVmSnapshots(vm)" title="Snapshot">📷</button>
+                                                <button class="btn btn-sm" style="background: #2196f3;" @click="createBackupJobFromVm(vm)" title="Crea Backup Job">☁️</button>
+                                                <button class="btn btn-sm" style="background: #9c27b0;" @click="createRecoveryJobFromVm(vm)" title="Crea Recovery Job">🔄</button>
+                                                <button class="btn btn-sm" style="background: #4caf50;" @click="createSyncJobFromVm(vm)" title="Crea Replica ZFS">⚡</button>
+                                            </div>
                                         </td>
                                 </tr>
                             </tbody>
@@ -5975,6 +5980,79 @@
                     sslLoading.value = false;
                 };
                 
+                // Crea job da VM
+                const createBackupJobFromVm = (vm) => {
+                    // Pre-popola il form backup e vai alla pagina
+                    newBackupJob.value = {
+                        name: `Backup-${vm.name || 'VM' + vm.vmid}`,
+                        source_node_id: selectedVmNodeId.value,
+                        vm_id: vm.vmid,
+                        vm_type: vm.type || 'qemu',
+                        vm_name: vm.name || '',
+                        pbs_node_id: '',
+                        backup_mode: 'snapshot',
+                        backup_compress: 'zstd',
+                        keep_last: 3,
+                        schedule: '',
+                        is_active: true
+                    };
+                    currentPage.value = 'backup';
+                    showToast(`Compila i campi mancanti per il backup di ${vm.name || vm.vmid}`, 'info');
+                };
+                
+                const createRecoveryJobFromVm = (vm) => {
+                    // Pre-popola il form recovery e vai alla pagina
+                    newRecoveryJob.value = {
+                        name: `Recovery-${vm.name || 'VM' + vm.vmid}`,
+                        source_node_id: selectedVmNodeId.value,
+                        vm_id: vm.vmid,
+                        vm_type: vm.type || 'qemu',
+                        vm_name: vm.name || '',
+                        pbs_node_id: '',
+                        dest_node_id: '',
+                        dest_vm_id: null,
+                        dest_vm_name_suffix: '-replica',
+                        dest_storage: '',
+                        backup_mode: 'snapshot',
+                        backup_compress: 'zstd',
+                        restore_start_vm: false,
+                        restore_unique: true,
+                        overwrite_existing: true,
+                        schedule: '',
+                        is_active: true
+                    };
+                    currentPage.value = 'recovery';
+                    showAddRecoveryJobModal.value = true;
+                    showToast(`Compila i campi mancanti per il recovery di ${vm.name || vm.vmid}`, 'info');
+                };
+                
+                const createSyncJobFromVm = async (vm) => {
+                    // Verifica se la VM ha dataset ZFS
+                    try {
+                        const node = nodes.value.find(n => n.id == selectedVmNodeId.value);
+                        if (!node) {
+                            showToast('Nodo non trovato', 'error');
+                            return;
+                        }
+                        
+                        const resp = await axios.get(`${API}/nodes/${selectedVmNodeId.value}/vms/${vm.vmid}/datasets`);
+                        if (!resp.data.datasets || resp.data.datasets.length === 0) {
+                            showToast('Questa VM non ha dataset ZFS. Usa Backup (PBS) per storage non-ZFS.', 'warning');
+                            return;
+                        }
+                        
+                        // Pre-seleziona e vai alla pagina sync
+                        selectedSyncNode.value = selectedVmNodeId.value;
+                        await loadNodeVmsForSync();
+                        selectedSyncVm.value = vm.vmid;
+                        currentPage.value = 'sync';
+                        showToast(`Seleziona destinazione per la replica di ${vm.name || vm.vmid}`, 'info');
+                    } catch (e) {
+                        showToast('Errore verifica dataset. Prova con Backup (PBS).', 'warning');
+                        console.error(e);
+                    }
+                };
+                
                 // VM Snapshot Management
                 const showVmSnapshots = (vm) => {
                     vmSnapshotData.value = {
@@ -6050,10 +6128,10 @@
                         loadDashboard(false);
                     } else if (newPage === 'backup') {
                         loadBackupJobs();
-                        loadPbsAndPveNodes();
+                        loadNodes();
                     } else if (newPage === 'recovery') {
                         loadRecoveryJobs();
-                        loadPbsAndPveNodes();
+                        loadNodes();
                     }
                 });
                 
@@ -6125,6 +6203,7 @@
                     setupMeshSSH,
                     // VM Snapshot functions
                     showVmSnapshots, loadVmSnapshots, rollbackToSnapshot, cloneSnapshot,
+                    createBackupJobFromVm, createRecoveryJobFromVm, createSyncJobFromVm,
                     // Recovery Jobs functions
                     loadRecoveryJobs, loadSourceVms, createRecoveryJob, runRecoveryJob, 
                     deleteRecoveryJob, editRecoveryJob, saveRecoveryJob, testPbsNode, getRecoveryJobStatus,
