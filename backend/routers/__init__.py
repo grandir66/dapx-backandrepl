@@ -1,0 +1,25 @@
+"""
+DAPX-backandrepl API Routers
+"""
+
+from . import auth
+from . import nodes
+from . import snapshots
+from . import sync_jobs
+from . import recovery_jobs
+from . import vms
+from . import logs
+from . import settings
+from . import ssh_keys
+
+__all__ = [
+    "auth",
+    "nodes",
+    "snapshots",
+    "sync_jobs",
+    "recovery_jobs",
+    "vms",
+    "logs",
+    "settings",
+    "ssh_keys"
+]
