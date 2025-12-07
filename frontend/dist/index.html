@@ -3407,40 +3407,125 @@
             
             <div v-if="currentPage === 'vms'">
                 <div class="page-header">
-                    <h1 class="page-title">Virtual Machines</h1>
-                    <p class="page-subtitle">Gestione VM e registrazione post-replica</p>
+                    <h1 class="page-title">🖥️ Virtual Machines</h1>
+                    <p class="page-subtitle">Gestione VM, backup e replica</p>
                 </div>
+                
+                <!-- Selezione Nodo -->
                 <div class="card">
-                    <div class="form-group">
-                            <label class="form-label">Seleziona Nodo</label>
+                    <div class="card-header">
+                        <h3 class="card-title">Seleziona Nodo</h3>
+                        <button class="btn btn-secondary btn-sm" @click="loadNodeVms" :disabled="!selectedVmNodeId || loading">🔄 Aggiorna</button>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
                         <select class="form-input" v-model="selectedVmNodeId" @change="loadNodeVms">
-                                <option value="">-- Seleziona --</option>
-                                <option v-for="node in nodes" :key="node.id" :value="node.id">{{ node.name }}</option>
+                            <option value="">-- Seleziona un nodo PVE --</option>
+                            <option v-for="node in pveNodes" :key="node.id" :value="node.id">
+                                {{ node.name }} ({{ node.hostname }})
+                            </option>
                         </select>
                     </div>
                 </div>
-                    <div class="card" v-if="nodeVms.length > 0">
+                
+                <!-- Lista VM -->
+                <div class="card" v-if="nodeVms.length > 0">
+                    <div class="card-header">
+                        <h3 class="card-title">VM/CT su {{ nodes.find(n => n.id == selectedVmNodeId)?.name }}</h3>
+                        <span class="badge badge-info">{{ nodeVms.length }} elementi</span>
+                    </div>
                     <div class="table-container">
                         <table>
-                                <thead><tr><th>VMID</th><th>Nome</th><th>Tipo</th><th>Stato</th><th>Azioni</th></tr></thead>
+                            <thead>
+                                <tr>
+                                    <th>VMID</th>
+                                    <th>Nome</th>
+                                    <th>Tipo</th>
+                                    <th>Stato</th>
+                                    <th>Backup PBS</th>
+                                    <th style="min-width: 280px;">Azioni</th>
+                                </tr>
+                            </thead>
                             <tbody>
                                 <tr v-for="vm in nodeVms" :key="vm.vmid">
-                                    <td>{{ vm.vmid }}</td>
-                                    <td>{{ vm.name }}</td>
-                                        <td><span class="badge badge-info">{{ vm.type }}</span></td>
-                                        <td><span class="badge" :class="vm.status === 'running' ? 'badge-success' : 'badge-warning'">{{ vm.status }}</span></td>
-                                        <td>
-                                            <div style="display: flex; gap: 4px; flex-wrap: wrap;">
-                                                <button class="btn btn-secondary btn-sm" @click="getVmDatasets(vm)" title="Mostra dataset">💾</button>
-                                                <button class="btn btn-primary btn-sm" @click="showVmSnapshots(vm)" title="Snapshot">📷</button>
-                                                <button class="btn btn-sm" style="background: #2196f3;" @click="createBackupJobFromVm(vm)" title="Crea Backup Job">☁️</button>
-                                                <button class="btn btn-sm" style="background: #9c27b0;" @click="createRecoveryJobFromVm(vm)" title="Crea Recovery Job">🔄</button>
-                                                <button class="btn btn-sm" style="background: #4caf50;" @click="createSyncJobFromVm(vm)" title="Crea Replica ZFS">⚡</button>
-                                            </div>
-                                        </td>
+                                    <td><strong>{{ vm.vmid }}</strong></td>
+                                    <td>{{ vm.name || '(senza nome)' }}</td>
+                                    <td>
+                                        <span class="badge" :class="vm.type === 'lxc' ? 'badge-warning' : 'badge-info'">
+                                            {{ vm.type === 'lxc' ? '📦 CT' : '🖥️ VM' }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="badge" :class="vm.status === 'running' ? 'badge-success' : 'badge-secondary'">
+                                            {{ vm.status === 'running' ? '▶️ Running' : '⏹️ Stopped' }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm" style="background: rgba(156,39,176,0.2); color: #ce93d8; border: 1px solid #9c27b0;" 
+                                                @click="showVmBackups(vm)" :disabled="loading">
+                                            📦 {{ vm.backup_count || '?' }} backup
+                                        </button>
+                                    </td>
+                                    <td>
+                                        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                            <button class="btn btn-sm" style="background: #1976d2;" @click="createBackupJobFromVm(vm)" title="Crea job di backup verso PBS">
+                                                ☁️ Backup PBS
+                                            </button>
+                                            <button class="btn btn-sm" style="background: #7b1fa2;" @click="createRecoveryJobFromVm(vm)" title="Crea job di replica via PBS">
+                                                🔄 Replica PBS
+                                            </button>
+                                            <button class="btn btn-sm" style="background: #388e3c;" @click="createSyncJobFromVm(vm)" title="Crea job di replica ZFS/BTRFS">
+                                                ⚡ Replica ZFS
+                                            </button>
+                                            <button class="btn btn-secondary btn-sm" @click="showVmSnapshots(vm)" title="Visualizza snapshot locali">
+                                                📷
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+                
+                <!-- Nessuna VM -->
+                <div class="card" v-else-if="selectedVmNodeId && !loading" style="text-align: center; padding: 40px;">
+                    <p style="color: var(--text-secondary);">Nessuna VM/CT trovata su questo nodo</p>
+                </div>
+                
+                <!-- Modal Backup VM -->
+                <div class="modal-overlay" v-if="showVmBackupsModal" @click.self="showVmBackupsModal = false">
+                    <div class="modal" style="max-width: 700px;">
+                        <div class="modal-header">
+                            <h3 class="modal-title">📦 Backup disponibili per {{ selectedVmForBackups?.name || 'VM' }} #{{ selectedVmForBackups?.vmid }}</h3>
+                            <button class="btn btn-icon" @click="showVmBackupsModal = false">✕</button>
+                        </div>
+                        <div class="modal-body">
+                            <div v-if="vmBackupsList.length > 0">
+                                <table style="width: 100%;">
+                                    <thead>
+                                        <tr><th>Data</th><th>Sorgente PBS</th><th>Dimensione</th><th>Azioni</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="backup in vmBackupsList" :key="backup.backup_id">
+                                            <td>{{ formatDate(backup.backup_time) }}</td>
+                                            <td>{{ backup.pbs_name || 'PBS' }}</td>
+                                            <td>{{ formatSize(backup.size) }}</td>
+                                            <td>
+                                                <button class="btn btn-sm btn-primary" @click="startRestoreFromVmBackup(backup)">
+                                                    🔄 Restore
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div v-else style="text-align: center; padding: 30px; color: var(--text-secondary);">
+                                <p>Nessun backup trovato per questa VM</p>
+                                <button class="btn btn-primary" @click="createBackupJobFromVm(selectedVmForBackups); showVmBackupsModal = false">
+                                    ☁️ Crea primo backup
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -4690,6 +4775,9 @@
                 const datasets = ref([]);
                 const snapshots = ref([]);
                 const nodeVms = ref([]);
+                const showVmBackupsModal = ref(false);
+                const selectedVmForBackups = ref(null);
+                const vmBackupsList = ref([]);
                 const users = ref([]);
                 
                 // Dashboard data
@@ -5860,8 +5948,75 @@
                 const loadNodeVms = async () => {
                     if (!selectedVmNodeId.value) { nodeVms.value = []; return; }
                     loading.value = true;
-                    try { nodeVms.value = (await axios.get(`${API}/vms/node/${selectedVmNodeId.value}`)).data; } catch (e) {}
+                    try { 
+                        nodeVms.value = (await axios.get(`${API}/vms/node/${selectedVmNodeId.value}`)).data;
+                        // Carica conteggio backup per ogni VM (in background)
+                        loadVmBackupCounts();
+                    } catch (e) {}
                     loading.value = false;
+                };
+                
+                const loadVmBackupCounts = async () => {
+                    // Per ogni PBS, cerca backup per le VM caricate
+                    const pbsNodes = nodes.value.filter(n => n.node_type === 'pbs');
+                    for (const pbs of pbsNodes) {
+                        try {
+                            const resp = await axios.get(`${API}/recovery-jobs/pbs-nodes/${pbs.id}/backups`);
+                            const backups = resp.data.backups || [];
+                            // Aggiorna conteggio backup per ogni VM
+                            for (const vm of nodeVms.value) {
+                                const vmBackups = backups.filter(b => b.vmid == vm.vmid);
+                                if (vmBackups.length > 0) {
+                                    vm.backup_count = (vm.backup_count || 0) + vmBackups.length;
+                                }
+                            }
+                        } catch (e) {
+                            console.log('Errore caricamento backup da PBS', pbs.name);
+                        }
+                    }
+                };
+                
+                const showVmBackups = async (vm) => {
+                    selectedVmForBackups.value = vm;
+                    vmBackupsList.value = [];
+                    showVmBackupsModal.value = true;
+                    
+                    // Cerca backup in tutti i PBS
+                    const pbsNodes = nodes.value.filter(n => n.node_type === 'pbs');
+                    for (const pbs of pbsNodes) {
+                        try {
+                            const resp = await axios.get(`${API}/recovery-jobs/pbs-nodes/${pbs.id}/backups?vm_id=${vm.vmid}`);
+                            const backups = (resp.data.backups || []).map(b => ({
+                                ...b,
+                                pbs_id: pbs.id,
+                                pbs_name: pbs.name
+                            }));
+                            vmBackupsList.value.push(...backups);
+                        } catch (e) {
+                            console.error('Errore backup da', pbs.name, e);
+                        }
+                    }
+                    // Ordina per data (più recente prima)
+                    vmBackupsList.value.sort((a, b) => (b.backup_time || 0) - (a.backup_time || 0));
+                };
+                
+                const startRestoreFromVmBackup = (backup) => {
+                    showVmBackupsModal.value = false;
+                    selectedRestorePbs.value = nodes.value.find(n => n.id === backup.pbs_id);
+                    restoreStorages.value = [];
+                    restoreData.value = {
+                        backup_id: backup.backup_id,
+                        vmid: backup.vmid,
+                        vm_name: backup.vm_name || selectedVmForBackups.value?.name || '',
+                        vm_type: backup.vm_type || 'qemu',
+                        pbs_node_id: backup.pbs_id,
+                        dest_node_id: '',
+                        dest_vmid: backup.vmid,
+                        dest_vm_name: backup.vm_name || selectedVmForBackups.value?.name || '',
+                        dest_storage: '',
+                        start_after_restore: false
+                    };
+                    showRestoreModal.value = true;
                 };
                 
                 // ========== VM Replica Wizard Functions ==========
@@ -6855,6 +7010,7 @@
                     isAuthenticated, setupRequired, currentUser, authConfig, loginForm, setupForm, loginError,
                     currentPage, settingsTab, loading, toasts,
                     nodes, syncJobs, recentLogs, allLogs, datasets, snapshots, nodeVms, users,
+                    showVmBackupsModal, selectedVmForBackups, vmBackupsList,
                     selectedNodeId, selectedVmNodeId, selectedLog,
                     sourceDatasets, destDatasets, selectedSchedule,
                     destRootPool, destSubPath, destPools, suggestedDestDataset,
@@ -6886,6 +7042,7 @@
                     showToast, formatDate, formatUptime, formatSize, getStatusClass,
                     doSetup, doLogin, doLogout,
                     loadNodes, loadSyncJobs, loadLogs, loadNotifSettings, loadNodeDatasets, loadNodeSnapshots, loadNodeVms,
+                    showVmBackups, startRestoreFromVmBackup,
                     loadSourceDatasets, loadDestDatasets, onDestNodeChange, updateDestDataset, applySchedule, showLogDetail,
                     // Dashboard functions
                     loadDashboard, loadNodeDetails, loadVMDetails, viewNodeDetails, viewVMDetails,
