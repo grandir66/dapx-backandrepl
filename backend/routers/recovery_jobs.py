@@ -1360,15 +1360,27 @@ async def get_node_storages(
                 })
         except json.JSONDecodeError:
             # Fallback: parse output testuale
+            # Format: Name Type Status Total Used Available %
             lines = result.stdout.strip().split('\n')
             if len(lines) > 1:
                 for line in lines[1:]:  # Skip header
                     parts = line.split()
                     if len(parts) >= 2:
+                        # Parse storage info
+                        name = parts[0]
+                        stype = parts[1] if len(parts) > 1 else "unknown"
+                        active = parts[2] == "active" if len(parts) > 2 else True
+                        total = int(parts[3]) * 1024 if len(parts) > 3 and parts[3].isdigit() else 0
+                        used = int(parts[4]) * 1024 if len(parts) > 4 and parts[4].isdigit() else 0
+                        avail = int(parts[5]) * 1024 if len(parts) > 5 and parts[5].isdigit() else 0
+                        
                         storages.append({
-                            "name": parts[0],
-                            "type": parts[1] if len(parts) > 1 else "unknown",
-                            "active": parts[2] == "active" if len(parts) > 2 else True,
+                            "name": name,
+                            "type": stype,
+                            "active": active,
+                            "total": total,
+                            "used": used,
+                            "avail": avail,
                             "content": ""
                         })
     

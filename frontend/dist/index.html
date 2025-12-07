@@ -5334,16 +5334,14 @@
                     try {
                         const resp = await axios.get(`${API}/recovery-jobs/node/${restoreData.value.dest_node_id}/storages`);
                         const allStorages = resp.data.storages || [];
-                        // Filtra storage che supportano VM/CT (images o rootdir)
-                        restoreStorages.value = allStorages.filter(s => {
-                            const content = s.content || '';
-                            return content.includes('images') || content.includes('rootdir') || content.includes('vztmpl');
-                        }).map(s => ({
-                            storage: s.name || s.storage,
-                            type: s.type,
-                            avail: s.avail || 0,
-                            content: s.content
-                        }));
+                        // Mostra tutti gli storage attivi tranne PBS
+                        restoreStorages.value = allStorages
+                            .filter(s => s.active !== false && s.type !== 'pbs')
+                            .map(s => ({
+                                storage: s.name || s.storage,
+                                type: s.type,
+                                avail: s.avail || 0
+                            }));
                         console.log('Storage caricati:', restoreStorages.value);
                     } catch (e) {
                         console.error('Errore caricamento storage:', e);
