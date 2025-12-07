@@ -247,7 +247,7 @@ async def create_backup_job(
     db.refresh(job)
     
     log_audit(db, user.id, "backup_job_created", "backup_job", 
-              target_id=job.id, details=f"Created backup job: {job.name}")
+              resource_id=job.id, details=f"Created backup job: {job.name}")
     
     return job_to_response(job, db)
 
@@ -273,7 +273,7 @@ async def update_backup_job(
     db.refresh(job)
     
     log_audit(db, user.id, "backup_job_updated", "backup_job",
-              target_id=job.id, details=f"Updated backup job: {job.name}")
+              resource_id=job.id, details=f"Updated backup job: {job.name}")
     
     return job_to_response(job, db)
 
@@ -294,7 +294,7 @@ async def delete_backup_job(
     db.commit()
     
     log_audit(db, user.id, "backup_job_deleted", "backup_job",
-              target_id=job_id, details=f"Deleted backup job: {job_name}")
+              resource_id=job_id, details=f"Deleted backup job: {job_name}")
     
     return {"status": "success", "message": f"Backup job '{job_name}' eliminato"}
 
@@ -456,7 +456,7 @@ async def run_backup_job(
         raise HTTPException(status_code=400, detail="Backup già in esecuzione")
     
     log_audit(db, user.id, "backup_job_manual_run", "backup_job",
-              target_id=job.id, details=f"Manual run: {job.name}")
+              resource_id=job.id, details=f"Manual run: {job.name}")
     
     # Avvia in background
     background_tasks.add_task(execute_backup_task, job_id, "")
@@ -525,7 +525,7 @@ async def delete_backup(
         
         if success:
             log_audit(db, user.id, "backup_deleted", "backup_job",
-                      target_id=job.id, details=f"Deleted backup: {backup_id}")
+                      resource_id=job.id, details=f"Deleted backup: {backup_id}")
             return {"status": "success", "message": "Backup eliminato"}
         else:
             raise HTTPException(status_code=500, detail="Errore eliminazione backup")
