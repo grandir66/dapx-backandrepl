@@ -351,16 +351,21 @@ async def execute_backup_task(job_id: int, db_path: str):
         logger.info(f"Esecuzione backup: {backup_cmd}")
         
         # Esegui backup via SSH
-        success, output, error = await ssh_service.execute_command_async(
+        result = await ssh_service.execute(
             hostname=source_node.hostname,
+            command=backup_cmd,
             port=source_node.ssh_port,
             username=source_node.ssh_user,
-            command=backup_cmd,
+            key_path=source_node.ssh_key_path or "/root/.ssh/id_rsa",
             timeout=7200  # 2 ore timeout per backup grandi
         )
         
         end_time = datetime.utcnow()
         duration = int((end_time - start_time).total_seconds())
+        
+        success = result.success
+        output = result.stdout
+        error = result.stderr
         
         if success:
             # Estrai info backup dall'output

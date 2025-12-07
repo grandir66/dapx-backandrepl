@@ -6553,6 +6553,11 @@
                     } else if (newPage === 'recovery') {
                         loadRecoveryJobs();
                         loadNodes();
+                    } else if (newPage === 'restore') {
+                        loadNodes();
+                        // Resetta selezione PBS e backup
+                        selectedRestorePbs.value = null;
+                        restorePbsBackups.value = [];
                     }
                 });
                 
