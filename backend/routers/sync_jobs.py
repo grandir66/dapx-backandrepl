@@ -1228,7 +1228,7 @@ class SnapshotInfo(BaseModel):
 @router.get("/{job_id}/snapshots", response_model=List[SnapshotInfo])
 async def list_job_snapshots(
     job_id: int,
-    user: User = Depends(require_viewer),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
