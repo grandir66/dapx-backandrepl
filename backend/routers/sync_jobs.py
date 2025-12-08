@@ -244,69 +244,11 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                 except Exception as e:
                     log_entry.message += f" | Errore registrazione VM: {str(e)}"
             
-            # Crea snapshot di retention e applica policy (solo per ZFS)
-            if job.keep_snapshots and job.keep_snapshots > 0 and sync_method != SyncMethod.BTRFS_SEND.value:
-                try:
-                    # Crea una snapshot di retention con timestamp e proteggila con hold
-                    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-                    retention_snap_name = f"retention_{timestamp}"
-                    full_snap = f"{job.dest_dataset}@{retention_snap_name}"
-                    
-                    # Crea snapshot e applicagli un hold per proteggerla da syncoid
-                    create_snap_cmd = f"zfs snapshot {full_snap} && zfs hold keep {full_snap}"
-                    
-                    snap_result = await ssh_service.execute(
-                        hostname=dest_node.hostname,
-                        command=create_snap_cmd,
-                        port=dest_node.ssh_port,
-                        username=dest_node.ssh_user,
-                        key_path=dest_node.ssh_key_path,
-                        timeout=60
-                    )
-                    
-                    if snap_result.success:
-                        log_entry.message += f" | Retention: {retention_snap_name} (protetta)"
-                    else:
-                        log_entry.message += f" | Errore retention: {snap_result.stderr[:50] if snap_result.stderr else 'unknown'}"
-                    
-                    # Lista snapshot di retention sul dataset destinazione
-                    list_cmd = f"zfs list -t snapshot -o name -s creation {job.dest_dataset} 2>/dev/null | grep 'retention_' || true"
-                    list_result = await ssh_service.execute(
-                        hostname=dest_node.hostname,
-                        command=list_cmd,
-                        port=dest_node.ssh_port,
-                        username=dest_node.ssh_user,
-                        key_path=dest_node.ssh_key_path,
-                        timeout=60
-                    )
-                    
-                    if list_result.success and list_result.stdout.strip():
-                        snapshots = [s.strip() for s in list_result.stdout.strip().split('\n') if s.strip()]
-                        
-                        # Se abbiamo più snapshot del limite, elimina le più vecchie
-                        if len(snapshots) > job.keep_snapshots:
-                            to_delete = snapshots[:-job.keep_snapshots]  # Mantieni le ultime N
-                            deleted_count = 0
-                            
-                            for snap in to_delete:
-                                # Prima rilascia l'hold, poi elimina
-                                snap_name = snap.split('@')[1] if '@' in snap else snap
-                                release_cmd = f"zfs release keep {snap} 2>/dev/null; zfs destroy {snap}"
-                                del_result = await ssh_service.execute(
-                                    hostname=dest_node.hostname,
-                                    command=release_cmd,
-                                    port=dest_node.ssh_port,
-                                    username=dest_node.ssh_user,
-                                    key_path=dest_node.ssh_key_path,
-                                    timeout=60
-                                )
-                                if del_result.success:
-                                    deleted_count += 1
-                            
-                            if deleted_count > 0:
-                                log_entry.message += f" | Eliminate {deleted_count} vecchie"
-                except Exception as retention_err:
-                    log_entry.message += f" | Errore retention: {str(retention_err)[:50]}"
+            # NOTA: Retention multiple versioni non compatibile con syncoid
+            # Syncoid gestisce le proprie snapshot per sync incrementali.
+            # Per retention, usare sanoid su entrambi i nodi o backup PBS.
+            if job.keep_snapshots and job.keep_snapshots > 0:
+                log_entry.message += f" | Nota: retention {job.keep_snapshots} richiede sanoid su dest"
         else:
             job_record.last_status = "failed"
             job_record.error_count += 1
