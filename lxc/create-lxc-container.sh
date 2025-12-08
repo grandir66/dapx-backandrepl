@@ -73,12 +73,60 @@ if pct list | grep -q "^${CTID} "; then
 fi
 
 # Verifica template
+TEMPLATE_NAME="${TEMPLATE%.tar.zst}"
+
 if [ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]; then
-    log_warning "Template ${TEMPLATE} non trovato. Download..."
-    pveam download local ${TEMPLATE%.tar.zst} || {
-        log_error "Impossibile scaricare template. Verifica connessione internet."
+    log_warning "Template ${TEMPLATE} non trovato."
+    
+    # Lista template disponibili
+    log_info "Template Debian disponibili:"
+    pveam available --section system | grep -i debian | head -5 || true
+    
+    log_info "Download template (questo può richiedere alcuni minuti)..."
+    
+    # Prova a scaricare template Debian
+    if pveam download local ${TEMPLATE_NAME} 2>/dev/null; then
+        log_success "Template scaricato: ${TEMPLATE_NAME}"
+    elif pveam download local debian-12-standard 2>/dev/null; then
+        log_success "Template scaricato: debian-12-standard"
+        # Trova il file scaricato
+        TEMPLATE=$(ls -t /var/lib/vz/template/cache/debian-12-standard*.tar.zst 2>/dev/null | head -1)
+        if [ -n "${TEMPLATE}" ]; then
+            TEMPLATE=$(basename ${TEMPLATE})
+            log_info "Usando template: ${TEMPLATE}"
+        fi
+    elif pveam download local debian-11-standard 2>/dev/null; then
+        log_success "Template scaricato: debian-11-standard"
+        TEMPLATE=$(ls -t /var/lib/vz/template/cache/debian-11-standard*.tar.zst 2>/dev/null | head -1)
+        if [ -n "${TEMPLATE}" ]; then
+            TEMPLATE=$(basename ${TEMPLATE})
+            log_info "Usando template: ${TEMPLATE}"
+        fi
+    else
+        log_error "Impossibile scaricare template."
+        log_info ""
+        log_info "Template disponibili da scaricare:"
+        pveam available --section system | grep -i debian | head -10
+        log_info ""
+        log_info "Scarica manualmente un template Debian:"
+        echo "  pveam download local <nome-template>"
+        echo ""
+        log_info "Oppure usa un template già presente:"
+        ls -lh /var/lib/vz/template/cache/*.tar.zst 2>/dev/null | head -5 || echo "  Nessun template trovato"
         exit 1
-    }
+    fi
+    
+    # Verifica che il template sia stato scaricato
+    if [ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]; then
+        # Cerca qualsiasi template Debian
+        TEMPLATE=$(ls -t /var/lib/vz/template/cache/debian*.tar.zst 2>/dev/null | head -1)
+        if [ -z "${TEMPLATE}" ]; then
+            log_error "Nessun template Debian trovato dopo il download"
+            exit 1
+        fi
+        TEMPLATE=$(basename ${TEMPLATE})
+        log_info "Usando template trovato: ${TEMPLATE}"
+    fi
 fi
 
 log_info "Creazione container LXC..."
