@@ -549,6 +549,7 @@ async def get_ssl_status(
     
     result = {
         "ssl_enabled": ssl_from_env or ssl_from_header or ssl_from_scheme,
+        "ssl_ready": cert_path.exists() and key_path.exists(),
         "cert_exists": cert_path.exists(),
         "key_exists": key_path.exists(),
         "cert_path": str(cert_path) if cert_path.exists() else None,
