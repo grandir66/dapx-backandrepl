@@ -289,33 +289,74 @@ async def run_update_process():
         log("Ricarica configurazione systemd...")
         subprocess.run(["systemctl", "daemon-reload"], capture_output=True)
         
-        # Riavvia servizio
+        # Riavvia servizio - trova il servizio corretto
         log("Riavvio servizio...")
         service_names = ["dapx-backandrepl", "sanoid-manager"]
+        service_found = None
+        
+        # Cerca quale servizio esiste
         for service in service_names:
             result = subprocess.run(
-                ["systemctl", "restart", service],
+                ["systemctl", "list-unit-files", f"{service}.service"],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0 and service in result.stdout:
+                service_found = service
+                log(f"Servizio trovato: {service}")
+                break
+        
+        if not service_found:
+            # Prova a cercare servizi che contengono "dapx" o "sanoid"
+            log("Ricerca servizio alternativo...")
+            result = subprocess.run(
+                ["systemctl", "list-unit-files", "--type=service", "--no-pager"],
                 capture_output=True,
                 text=True
             )
             if result.returncode == 0:
-                log(f"Servizio {service} riavviato")
-                break
+                for line in result.stdout.splitlines():
+                    if "dapx" in line.lower() or "sanoid" in line.lower():
+                        # Estrai nome servizio
+                        parts = line.split()
+                        if parts and ".service" in parts[0]:
+                            service_found = parts[0].replace(".service", "")
+                            log(f"Servizio alternativo trovato: {service_found}")
+                            break
+        
+        if service_found:
+            # Riavvia il servizio trovato
+            result = subprocess.run(
+                ["systemctl", "restart", service_found],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                log(f"Servizio {service_found} riavviato")
+            else:
+                log(f"Warning: errore riavvio servizio {service_found}: {result.stderr}")
+        else:
+            log("Warning: nessun servizio systemd trovato. Il servizio potrebbe non essere installato come systemd service.")
+            log("Per installare il servizio, esegui: ./install.sh")
         
         # Attendi che il servizio sia pronto
         await asyncio.sleep(3)
         
         # Verifica servizio
-        log("Verifica servizio...")
-        for service in service_names:
+        if service_found:
+            log("Verifica servizio...")
             result = subprocess.run(
-                ["systemctl", "is-active", service],
+                ["systemctl", "is-active", service_found],
                 capture_output=True,
                 text=True
             )
             if result.returncode == 0:
-                log(f"Servizio {service} attivo")
-                break
+                log(f"Servizio {service_found} attivo")
+            else:
+                log(f"Warning: servizio {service_found} non risulta attivo")
+                log(f"Controlla con: systemctl status {service_found}")
+        else:
+            log("Impossibile verificare servizio: servizio non trovato")
         
         # Aggiorna versione (forza rilettura dopo aggiornamento)
         log("Lettura versione aggiornata...")
