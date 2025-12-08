@@ -715,28 +715,72 @@ async def get_vm_all_snapshots(
     sanoid_snapshots = []
     syncoid_snapshots = []
     backup_snapshots = []
+    datasets_to_check = set()
+    seen_snapshots = set()  # Per evitare duplicati
     
     if datasets_resp and datasets_resp.datasets:
         for dataset in datasets_resp.datasets:
-            snaps = await ssh_service.get_snapshots(
-                hostname=node.hostname,
-                dataset=dataset,
-                port=node.ssh_port,
-                username=node.ssh_user,
-                key_path=node.ssh_key_path
-            )
-            # Filtra snapshot per tipo
-            for snap in snaps:
-                snap_name = snap.get('snapshot', '')
-                if 'autosnap_' in snap_name:
-                    snap['source'] = 'sanoid'
-                    sanoid_snapshots.append(snap)
-                elif 'syncoid_' in snap_name:
-                    snap['source'] = 'syncoid'
-                    syncoid_snapshots.append(snap)
-                elif 'backup_' in snap_name:
-                    snap['source'] = 'backup'
-                    backup_snapshots.append(snap)
+            datasets_to_check.add(dataset)
+            
+            # Se il dataset è una replica (es: zfs/replica/vm-667-disk-0), cerca anche sul dataset originale
+            if '/replica/' in dataset:
+                original_dataset = dataset.replace('/replica/', '/')
+                datasets_to_check.add(original_dataset)
+            elif dataset.startswith('replica/'):
+                original_dataset = dataset.replace('replica/', '')
+                datasets_to_check.add(original_dataset)
+    
+    # Cerca snapshot su tutti i dataset trovati (inclusi quelli originali se replica)
+    for dataset in datasets_to_check:
+        # Prova prima sul nodo corrente
+        snaps = await ssh_service.get_snapshots(
+            hostname=node.hostname,
+            dataset=dataset,
+            port=node.ssh_port,
+            username=node.ssh_user,
+            key_path=node.ssh_key_path
+        )
+        
+        # Se non trova snapshot e il dataset è originale, cerca anche su altri nodi
+        if not snaps and '/replica/' not in dataset and not dataset.startswith('replica/'):
+            # Cerca su tutti i nodi PVE
+            all_nodes = db.query(Node).filter(Node.node_type == "pve").all()
+            for other_node in all_nodes:
+                if other_node.id == node_id:
+                    continue  # Già controllato
+                
+                other_snaps = await ssh_service.get_snapshots(
+                    hostname=other_node.hostname,
+                    dataset=dataset,
+                    port=other_node.ssh_port,
+                    username=other_node.ssh_user,
+                    key_path=other_node.ssh_key_path
+                )
+                if other_snaps:
+                    snaps = other_snaps
+                    break  # Usa il primo nodo che trova snapshot
+        
+        # Filtra snapshot per tipo (include tutte le snapshot del dataset)
+        for snap in snaps:
+            snap_full_name = snap.get('full_name', '')
+            if snap_full_name in seen_snapshots:
+                continue  # Evita duplicati
+            seen_snapshots.add(snap_full_name)
+            
+            snap_name = snap.get('snapshot', '')
+            if 'autosnap_' in snap_name:
+                snap['source'] = 'sanoid'
+                sanoid_snapshots.append(snap)
+            elif 'syncoid_' in snap_name:
+                snap['source'] = 'syncoid'
+                syncoid_snapshots.append(snap)
+            elif 'backup_' in snap_name:
+                snap['source'] = 'backup'
+                backup_snapshots.append(snap)
+            else:
+                # Snapshot senza prefisso specifico: aggiungi a backup (retention generica)
+                snap['source'] = 'backup'
+                backup_snapshots.append(snap)
     
     # Fallback: se non troviamo dataset ma ci sono snapshot con pattern vm-XXX, cercale comunque
     if not datasets_resp or not datasets_resp.datasets:
