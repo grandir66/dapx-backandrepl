@@ -42,9 +42,7 @@ GATEWAY="${9:-}"
 DNS_SERVERS="${10:-8.8.8.8 8.8.4.4}"
 PASSWORD="${11:-}"
 SSH_PUBLIC_KEY="${12:-}"
-
-# Template da usare (Debian 12 Bookworm)
-TEMPLATE="debian-12-standard_12.0-1_amd64.tar.zst"
+TEMPLATE="${13:-}"  # Template ora è il 13° parametro
 
 # Directory script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -72,63 +70,45 @@ if pct list | grep -q "^${CTID} "; then
     exit 1
 fi
 
-# Verifica template
-TEMPLATE_NAME="${TEMPLATE%.tar.zst}"
-
-if [ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]; then
-    log_warning "Template ${TEMPLATE} non trovato."
+# Se template non fornito, cerca automaticamente
+if [ -z "${TEMPLATE}" ]; then
+    log_info "Ricerca template Debian disponibile..."
     
-    # Lista template disponibili
-    log_info "Template Debian disponibili:"
-    pveam available --section system | grep -i debian | head -5 || true
-    
-    log_info "Download template (questo può richiedere alcuni minuti)..."
-    
-    # Prova a scaricare template Debian
-    if pveam download local ${TEMPLATE_NAME} 2>/dev/null; then
-        log_success "Template scaricato: ${TEMPLATE_NAME}"
-    elif pveam download local debian-12-standard 2>/dev/null; then
-        log_success "Template scaricato: debian-12-standard"
-        # Trova il file scaricato
-        TEMPLATE=$(ls -t /var/lib/vz/template/cache/debian-12-standard*.tar.zst 2>/dev/null | head -1)
-        if [ -n "${TEMPLATE}" ]; then
-            TEMPLATE=$(basename ${TEMPLATE})
-            log_info "Usando template: ${TEMPLATE}"
-        fi
-    elif pveam download local debian-11-standard 2>/dev/null; then
-        log_success "Template scaricato: debian-11-standard"
-        TEMPLATE=$(ls -t /var/lib/vz/template/cache/debian-11-standard*.tar.zst 2>/dev/null | head -1)
-        if [ -n "${TEMPLATE}" ]; then
-            TEMPLATE=$(basename ${TEMPLATE})
-            log_info "Usando template: ${TEMPLATE}"
-        fi
-    else
-        log_error "Impossibile scaricare template."
-        log_info ""
-        log_info "Template disponibili da scaricare:"
-        pveam available --section system | grep -i debian | head -10
-        log_info ""
-        log_info "Scarica manualmente un template Debian:"
-        echo "  pveam download local <nome-template>"
-        echo ""
-        log_info "Oppure usa un template già presente:"
-        ls -lh /var/lib/vz/template/cache/*.tar.zst 2>/dev/null | head -5 || echo "  Nessun template trovato"
-        exit 1
+    # Cerca prima template già scaricati
+    TEMPLATE=$(ls -t /var/lib/vz/template/cache/debian-12*.tar.zst 2>/dev/null | head -1)
+    if [ -z "${TEMPLATE}" ]; then
+        TEMPLATE=$(ls -t /var/lib/vz/template/cache/debian-11*.tar.zst 2>/dev/null | head -1)
+    fi
+    if [ -z "${TEMPLATE}" ]; then
+        TEMPLATE=$(ls -t /var/lib/vz/template/cache/debian*.tar.zst 2>/dev/null | head -1)
+    fi
+    if [ -z "${TEMPLATE}" ]; then
+        TEMPLATE=$(ls -t /var/lib/vz/template/cache/ubuntu*.tar.zst 2>/dev/null | head -1)
     fi
     
-    # Verifica che il template sia stato scaricato
-    if [ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]; then
-        # Cerca qualsiasi template Debian
-        TEMPLATE=$(ls -t /var/lib/vz/template/cache/debian*.tar.zst 2>/dev/null | head -1)
-        if [ -z "${TEMPLATE}" ]; then
-            log_error "Nessun template Debian trovato dopo il download"
-            exit 1
-        fi
-        TEMPLATE=$(basename ${TEMPLATE})
-        log_info "Usando template trovato: ${TEMPLATE}"
+    if [ -n "${TEMPLATE}" ]; then
+        TEMPLATE=$(basename "${TEMPLATE}")
+        log_success "Template trovato: ${TEMPLATE}"
+    else
+        log_error "Nessun template Debian/Ubuntu trovato."
+        log_info "Scarica un template con:"
+        echo "  pveam download local debian-12-standard"
+        echo ""
+        log_info "Template disponibili:"
+        pveam available --section system 2>/dev/null | grep -iE "debian|ubuntu" | head -5
+        exit 1
     fi
 fi
 
+# Verifica che il template esista
+if [ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]; then
+    log_error "Template non trovato: ${TEMPLATE}"
+    log_info "Template presenti:"
+    ls -lh /var/lib/vz/template/cache/*.tar.* 2>/dev/null | head -5 || echo "  Nessuno"
+    exit 1
+fi
+
+log_info "Template: ${TEMPLATE}"
 log_info "Creazione container LXC..."
 
 # Crea container
@@ -139,14 +119,14 @@ pct create ${CTID} \
     --hostname ${CT_NAME} \
     --memory ${MEMORY} \
     --cores ${CORES} \
-    --net0 name=eth0,bridge=${NETWORK_BRIDGE},ip=${IP_ADDRESS},gw=${GATEWAY} \
+    --net0 name=eth0,bridge=${NETWORK_BRIDGE},ip=${IP_ADDRESS}${GATEWAY:+,gw=${GATEWAY}} \
     --nameserver "${DNS_SERVERS}" \
     --unprivileged 0 \
     --features nesting=1,keyctl=1 \
     --ostype debian \
     --arch amd64 \
-    --password "${PASSWORD}" \
-    --ssh-public-keys "${SSH_PUBLIC_KEY}" \
+    ${PASSWORD:+--password "${PASSWORD}"} \
+    ${SSH_PUBLIC_KEY:+--ssh-public-keys "${SSH_PUBLIC_KEY}"} \
     --start 0
 
 if [ $? -ne 0 ]; then
@@ -161,9 +141,6 @@ log_info "Configurazione container..."
 
 # Abilita features necessarie
 pct set ${CTID} -features nesting=1,keyctl=1
-
-# Monta directory per dati persistenti
-pct set ${CTID} -mp0 ${STORAGE}:8,mp=/var/lib/dapx-backandrepl,backup=1
 
 # Avvia container
 log_info "Avvio container..."
@@ -204,6 +181,7 @@ log_info "Nome: ${CT_NAME}"
 log_info "Storage: ${STORAGE}"
 log_info "Memoria: ${MEMORY} MB"
 log_info "CPU: ${CORES} cores"
+log_info "Template: ${TEMPLATE}"
 echo ""
 log_info "Per completare l'installazione:"
 echo "  pct exec ${CTID} -- /tmp/dapx-install/install.sh"
@@ -219,4 +197,3 @@ log_info "Per esportare il container:"
 echo "  vzdump ${CTID} --storage ${STORAGE} --compress zstd"
 echo ""
 log_success "════════════════════════════════════════════════"
-
