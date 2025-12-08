@@ -63,32 +63,61 @@ class UpdateStartResponse(BaseModel):
 def get_current_version() -> str:
     """Ottieni versione corrente installata"""
     try:
-        # Prova file version.txt
-        if os.path.exists(VERSION_FILE):
-            with open(VERSION_FILE, 'r') as f:
-                return f.read().strip()
+        # Prova file VERSION (priorità massima)
+        version_file = VERSION_FILE
+        # Prova anche nella root del progetto se INSTALL_DIR non contiene VERSION
+        if not os.path.exists(version_file):
+            # Prova percorsi alternativi
+            alt_paths = [
+                os.path.join(INSTALL_DIR, "VERSION"),
+                "/opt/dapx-backandrepl/VERSION",
+                os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "VERSION"),
+                os.path.join(os.getcwd(), "VERSION")
+            ]
+            for alt_path in alt_paths:
+                if os.path.exists(alt_path):
+                    version_file = alt_path
+                    break
         
-        # Prova git describe
+        if os.path.exists(version_file):
+            try:
+                with open(version_file, 'r') as f:
+                    version = f.read().strip()
+                    if version:
+                        logger.debug(f"Versione letta da {version_file}: {version}")
+                        return version
+            except Exception as e:
+                logger.warning(f"Errore lettura file VERSION {version_file}: {e}")
+        
+        # Fallback: Prova git describe
         if os.path.exists(os.path.join(INSTALL_DIR, ".git")):
             result = subprocess.run(
                 ["git", "describe", "--tags", "--always"],
                 cwd=INSTALL_DIR,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=5
             )
-            if result.returncode == 0:
-                return result.stdout.strip()
+            if result.returncode == 0 and result.stdout.strip():
+                version = result.stdout.strip()
+                logger.debug(f"Versione da git describe: {version}")
+                return version
         
-        # Prova git rev-parse
-        result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=INSTALL_DIR,
-            capture_output=True,
-            text=True
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
+        # Fallback: Prova git rev-parse
+        if os.path.exists(os.path.join(INSTALL_DIR, ".git")):
+            result = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=INSTALL_DIR,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                version = result.stdout.strip()
+                logger.debug(f"Versione da git rev-parse: {version}")
+                return version
         
+        logger.warning("Impossibile determinare versione, uso 'unknown'")
         return "unknown"
     except Exception as e:
         logger.error(f"Errore lettura versione: {e}")
@@ -203,6 +232,15 @@ async def run_update_process():
                 raise Exception(f"Errore git reset: {result.stderr}")
             
             log("Codice aggiornato da Git")
+            
+            # Verifica che il file VERSION sia stato aggiornato
+            if os.path.exists(VERSION_FILE):
+                try:
+                    with open(VERSION_FILE, 'r') as f:
+                        new_version = f.read().strip()
+                    log(f"Versione aggiornata: {new_version}")
+                except Exception as e:
+                    log(f"Warning: impossibile leggere VERSION dopo aggiornamento: {e}")
         else:
             # Non è un repository Git
             log("Download nuova versione...")
@@ -279,10 +317,30 @@ async def run_update_process():
                 log(f"Servizio {service} attivo")
                 break
         
-        # Aggiorna versione
-        update_status["current_version"] = get_current_version()
+        # Aggiorna versione (forza rilettura dopo aggiornamento)
+        log("Lettura versione aggiornata...")
+        old_version = update_status.get("current_version", "unknown")
+        new_version = get_current_version()
+        
+        # Verifica che il file VERSION sia stato aggiornato
+        if os.path.exists(VERSION_FILE):
+            try:
+                with open(VERSION_FILE, 'r') as f:
+                    file_version = f.read().strip()
+                log(f"Versione nel file VERSION: {file_version}")
+                if file_version and file_version != new_version:
+                    log(f"Warning: versione file ({file_version}) diversa da quella letta ({new_version})")
+            except Exception as e:
+                log(f"Warning: impossibile leggere file VERSION: {e}")
+        
+        update_status["current_version"] = new_version
         update_status["last_update"] = datetime.now().isoformat()
         update_status["update_available"] = False
+        
+        if old_version != new_version:
+            log(f"Versione aggiornata: {old_version} → {new_version}")
+        else:
+            log(f"Versione corrente: {new_version}")
         
         log("✓ Aggiornamento completato con successo!")
         
@@ -374,8 +432,41 @@ async def start_update(
 @router.get("/version")
 async def get_version():
     """Ottieni versione corrente (pubblico)"""
+    version = get_current_version()
+    version_file_exists = os.path.exists(VERSION_FILE)
     return {
-        "version": get_current_version(),
-        "install_dir": INSTALL_DIR
+        "version": version,
+        "install_dir": INSTALL_DIR,
+        "version_file": VERSION_FILE,
+        "version_file_exists": version_file_exists,
+        "version_file_content": None if not version_file_exists else open(VERSION_FILE, 'r').read().strip()
     }
+
+
+@router.post("/refresh-version")
+async def refresh_version(user: User = Depends(require_admin)):
+    """Forza refresh della versione (utile dopo aggiornamento)"""
+    try:
+        # Forza rilettura del file VERSION
+        version = get_current_version()
+        update_status["current_version"] = version
+        
+        # Verifica anche se il file esiste
+        version_file_exists = os.path.exists(VERSION_FILE)
+        version_file_content = None
+        if version_file_exists:
+            with open(VERSION_FILE, 'r') as f:
+                version_file_content = f.read().strip()
+        
+        return {
+            "success": True,
+            "version": version,
+            "version_file": VERSION_FILE,
+            "version_file_exists": version_file_exists,
+            "version_file_content": version_file_content,
+            "message": f"Versione aggiornata: {version}"
+        }
+    except Exception as e:
+        logger.error(f"Errore refresh versione: {e}")
+        raise HTTPException(status_code=500, detail=f"Errore refresh versione: {str(e)}")
 
