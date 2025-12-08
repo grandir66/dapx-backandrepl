@@ -6517,11 +6517,31 @@
                     }
                 };
                 
-                const runMigrationJob = async (jobId) => {
-                    if (!confirm('Eseguire la migrazione ora?')) return;
+                const runMigrationJob = async (jobId, force = false) => {
+                    if (!force && !confirm('Eseguire la migrazione ora?')) return;
                     loading.value = true;
                     try {
-                        await axios.post(`${API}/migration-jobs/${jobId}/run`);
+                        const resp = await axios.post(`${API}/migration-jobs/${jobId}/run?force=${force}`);
+                        
+                        // Gestione richiesta conferma per VM esistente
+                        if (resp.data.requires_confirmation) {
+                            const confirmOverwrite = confirm(
+                                `⚠️ ${resp.data.message}\n\n` +
+                                `VM esistente: ${resp.data.existing_vm_id}\n` +
+                                `Nodo: ${resp.data.dest_node}\n\n` +
+                                `Clicca OK per eliminare la VM esistente e procedere,\n` +
+                                `Annulla per interrompere.`
+                            );
+                            
+                            if (confirmOverwrite) {
+                                // Richiama con force=true
+                                return runMigrationJob(jobId, true);
+                            } else {
+                                showToast('Migrazione annullata', 'info');
+                                return;
+                            }
+                        }
+                        
                         showToast('Migrazione avviata!', 'success');
                         loadMigrationJobs();
                     } catch (e) {

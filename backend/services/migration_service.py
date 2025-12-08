@@ -35,7 +35,8 @@ class MigrationService:
         source_key: str = "/root/.ssh/id_rsa",
         dest_port: int = 22,
         dest_user: str = "root",
-        dest_key: str = "/root/.ssh/id_rsa"
+        dest_key: str = "/root/.ssh/id_rsa",
+        force_overwrite: bool = False  # Se True, elimina VM esistente senza conferma
     ) -> Dict:
         """
         Migra/copia una VM tra nodi Proxmox usando funzionalità native.
@@ -147,7 +148,8 @@ class MigrationService:
                 source_key=source_key,
                 dest_port=dest_port,
                 dest_user=dest_user,
-                dest_key=dest_key
+                dest_key=dest_key,
+                force_overwrite=force_overwrite
             )
         
         # Per move, usa migrate diretto
@@ -255,7 +257,8 @@ class MigrationService:
         source_key: str = "/root/.ssh/id_rsa",
         dest_port: int = 22,
         dest_user: str = "root",
-        dest_key: str = "/root/.ssh/id_rsa"
+        dest_key: str = "/root/.ssh/id_rsa",
+        force_overwrite: bool = False  # Se True, elimina VM esistente senza conferma
     ) -> Dict:
         """
         Copia VM usando vzdump + restore (per copia tra nodi senza cluster)
@@ -280,7 +283,18 @@ class MigrationService:
         )
         
         if check_result.success and check_result.stdout.strip():
-            # La VM esiste già - per copia ricorrente, eliminiamola
+            # La VM esiste già
+            if not force_overwrite:
+                # Richiedi conferma per esecuzioni manuali
+                return {
+                    "success": False,
+                    "requires_confirmation": True,
+                    "message": f"La VM {target_vmid} esiste già su {dest_hostname}. Vuoi eliminarla e procedere con la migrazione?",
+                    "existing_vm_id": target_vmid,
+                    "dest_hostname": dest_hostname
+                }
+            
+            # force_overwrite=True: elimina la VM esistente
             logger.info(f"VM {target_vmid} esiste già su {dest_hostname}, la elimino prima di procedere")
             
             # Prima stoppa la VM se in esecuzione

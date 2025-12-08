@@ -131,8 +131,14 @@ def check_job_access(user: User, job: MigrationJob, db: Session) -> bool:
 
 # ============== Background Task ==============
 
-async def execute_migration_job_task(job_id: int, triggered_by: Optional[int] = None):
-    """Esegue un job di migrazione in background"""
+async def execute_migration_job_task(job_id: int, triggered_by: Optional[int] = None, force_overwrite: bool = True):
+    """Esegue un job di migrazione in background
+    
+    Args:
+        job_id: ID del job
+        triggered_by: ID utente che ha avviato il job (None per schedulati)
+        force_overwrite: Se True, elimina VM esistente senza conferma (default True per schedulati)
+    """
     from database import SessionLocal
     
     db = SessionLocal()
@@ -140,14 +146,14 @@ async def execute_migration_job_task(job_id: int, triggered_by: Optional[int] = 
         job = db.query(MigrationJob).filter(MigrationJob.id == job_id).first()
         if not job:
             logger.error(f"Migration job {job_id} non trovato")
-            return
+            return {"success": False, "message": f"Job {job_id} non trovato"}
         
         source_node = db.query(Node).filter(Node.id == job.source_node_id).first()
         dest_node = db.query(Node).filter(Node.id == job.dest_node_id).first()
         
         if not source_node or not dest_node:
             logger.error(f"Nodi non trovati per job {job_id}")
-            return
+            return {"success": False, "message": "Nodi non trovati"}
         
         # Crea log entry
         log_entry = JobLog(
@@ -183,8 +189,17 @@ async def execute_migration_job_task(job_id: int, triggered_by: Optional[int] = 
                 source_key=source_node.ssh_key_path,
                 dest_port=dest_node.ssh_port,
                 dest_user=dest_node.ssh_user,
-                dest_key=dest_node.ssh_key_path
+                dest_key=dest_node.ssh_key_path,
+                force_overwrite=force_overwrite
             )
+            
+            # Se richiede conferma, ritorna senza aggiornare il job
+            if result.get("requires_confirmation"):
+                log_entry.status = "pending_confirmation"
+                log_entry.message = result["message"]
+                log_entry.completed_at = datetime.utcnow()
+                db.commit()
+                return result
             
             duration = int((datetime.utcnow() - start_time).total_seconds())
             
@@ -435,10 +450,15 @@ async def run_migration_job(
     job_id: int,
     background_tasks: BackgroundTasks,
     request: Request,
+    force: bool = False,  # Se True, sovrascrive VM esistente senza conferma
     user: User = Depends(require_operator),
     db: Session = Depends(get_db)
 ):
-    """Esegue manualmente un job di migrazione"""
+    """Esegue manualmente un job di migrazione
+    
+    Args:
+        force: Se True, elimina VM esistente senza chiedere conferma
+    """
     
     job = db.query(MigrationJob).filter(MigrationJob.id == job_id).first()
     if not job:
@@ -450,15 +470,46 @@ async def run_migration_job(
     if job.last_status == "running":
         raise HTTPException(status_code=400, detail="Job già in esecuzione")
     
+    # Per esecuzione manuale senza force, prima verifichiamo se serve conferma
+    if not force:
+        source_node = db.query(Node).filter(Node.id == job.source_node_id).first()
+        dest_node = db.query(Node).filter(Node.id == job.dest_node_id).first()
+        
+        if source_node and dest_node:
+            # Verifica se la VM destinazione esiste
+            target_vmid = job.dest_vm_id if job.dest_vm_id else job.vm_id
+            check_cmd = f"{'qm' if job.vm_type == 'qemu' else 'pct'} status {target_vmid} 2>/dev/null"
+            
+            from services.ssh_service import ssh_service
+            check_result = await ssh_service.execute(
+                hostname=dest_node.hostname,
+                command=check_cmd,
+                port=dest_node.ssh_port,
+                username=dest_node.ssh_user,
+                key_path=dest_node.ssh_key_path,
+                timeout=30
+            )
+            
+            if check_result.success and check_result.stdout.strip():
+                # La VM esiste già - chiedi conferma
+                return {
+                    "success": False,
+                    "requires_confirmation": True,
+                    "message": f"La VM {target_vmid} esiste già su {dest_node.name}. Vuoi eliminarla e procedere con la migrazione?",
+                    "existing_vm_id": target_vmid,
+                    "dest_node": dest_node.name
+                }
+    
     job.last_status = "running"
     db.commit()
     
-    background_tasks.add_task(execute_migration_job_task, job_id, user.id)
+    # Esegui con force_overwrite=True (conferma già data o force=True)
+    background_tasks.add_task(execute_migration_job_task, job_id, user.id, True)
     
     log_audit(
         db, user.id, "migration_job_run", "migration_job",
         resource_id=job_id,
-        details=f"Manually triggered migration job: {job.name}",
+        details=f"Manually triggered migration job: {job.name}" + (" (force overwrite)" if force else ""),
         ip_address=request.client.host if request.client else None
     )
     
