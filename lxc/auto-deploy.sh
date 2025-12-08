@@ -388,6 +388,12 @@ create_container() {
     fi
     
     log_success "Container avviato"
+    
+    # Imposta password root
+    log_info "Impostazione password root..."
+    ROOT_PASSWORD="dapx$(date +%s | tail -c 5)"
+    echo "root:${ROOT_PASSWORD}" | pct exec ${CTID} -- chpasswd
+    log_success "Password root: ${ROOT_PASSWORD}"
 }
 
 install_application() {
@@ -434,6 +440,7 @@ show_summary() {
     echo "  Nome: ${CT_NAME}"
     echo "  IP: ${container_ip:-N/A}"
     echo "  Porta: 8420"
+    echo -e "  Password root: ${YELLOW}${ROOT_PASSWORD}${NC}"
     echo ""
     log_info "${BOLD}Accesso Web UI:${NC}"
     if [ -n "${container_ip}" ]; then
