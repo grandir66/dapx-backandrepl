@@ -684,3 +684,84 @@ async def set_as_auth_node(
     db.commit()
     
     return {"message": f"Nodo {node.name} impostato come nodo di autenticazione"}
+
+
+@router.get("/{node_id}/bridges")
+async def get_node_bridges(
+    node_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Ottiene la lista dei bridge di rete disponibili sul nodo"""
+    node = db.query(Node).filter(Node.id == node_id).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Nodo non trovato")
+    
+    if not check_node_access(user, node):
+        raise HTTPException(status_code=403, detail="Accesso negato a questo nodo")
+    
+    bridges = await proxmox_service.get_node_bridges(
+        hostname=node.hostname,
+        port=node.ssh_port,
+        username=node.ssh_user,
+        key_path=node.ssh_key_path
+    )
+    
+    return {"bridges": bridges}
+
+
+@router.get("/{node_id}/storages")
+async def get_node_storages(
+    node_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Ottiene la lista degli storage disponibili sul nodo"""
+    node = db.query(Node).filter(Node.id == node_id).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Nodo non trovato")
+    
+    if not check_node_access(user, node):
+        raise HTTPException(status_code=403, detail="Accesso negato a questo nodo")
+    
+    from services.ssh_service import ssh_service
+    
+    # Ottieni lista storage
+    result = await ssh_service.execute(
+        hostname=node.hostname,
+        command="pvesm status --output-format json 2>/dev/null || pvesm status",
+        port=node.ssh_port,
+        username=node.ssh_user,
+        key_path=node.ssh_key_path,
+        timeout=30
+    )
+    
+    storages = []
+    if result.success:
+        try:
+            import json
+            storages_data = json.loads(result.stdout)
+            for storage in storages_data:
+                storages.append({
+                    "storage": storage.get("storage", ""),
+                    "type": storage.get("type", ""),
+                    "status": storage.get("status", ""),
+                    "avail": storage.get("avail", ""),
+                    "used": storage.get("used", ""),
+                    "total": storage.get("total", "")
+                })
+        except:
+            # Fallback: parse text output
+            for line in result.stdout.strip().split('\n')[1:]:
+                parts = line.split()
+                if len(parts) >= 3:
+                    storages.append({
+                        "storage": parts[0],
+                        "type": parts[1],
+                        "status": parts[2],
+                        "avail": parts[3] if len(parts) > 3 else "N/A",
+                        "used": parts[4] if len(parts) > 4 else "N/A",
+                        "total": parts[5] if len(parts) > 5 else "N/A"
+                    })
+    
+    return {"storages": storages}

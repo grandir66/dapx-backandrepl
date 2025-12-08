@@ -815,6 +815,12 @@
                     </svg>
                     Restore (PBS)
                 </div>
+                <div class="nav-item" :class="{ active: currentPage === 'migration' }" @click="currentPage = 'migration'">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                    </svg>
+                    Migrazione VM
+                </div>
                 <div class="nav-item" :class="{ active: currentPage === 'vms' }" @click="currentPage = 'vms'">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
@@ -3531,6 +3537,93 @@
                 </div>
             </div>
             
+            <!-- Migration Jobs Page -->
+            <div v-if="currentPage === 'migration'">
+                <div class="page-header">
+                    <h1 class="page-title">🚀 Migrazione VM</h1>
+                    <p class="page-subtitle">Copia o migra VM tra nodi Proxmox con riconfigurazione hardware</p>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">📋 Job di Migrazione</h3>
+                        <button class="btn btn-primary" @click="showMigrationJobModal = true; editingMigrationJobId = null; resetMigrationJobForm()">
+                            ➕ Nuovo Job
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div v-if="loading" style="text-align: center; padding: 40px;">
+                            <span class="spinner"></span>
+                        </div>
+                        <div v-else-if="migrationJobs.length === 0" class="empty-state">
+                            <p>Nessun job di migrazione configurato</p>
+                            <button class="btn btn-primary" @click="showMigrationJobModal = true; resetMigrationJobForm()">
+                                Crea primo job
+                            </button>
+                        </div>
+                        <div v-else class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Nome</th>
+                                        <th>Sorgente</th>
+                                        <th>Destinazione</th>
+                                        <th>VM</th>
+                                        <th>Schedule</th>
+                                        <th>Ultima Esecuzione</th>
+                                        <th>Stato</th>
+                                        <th>Azioni</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="job in migrationJobs" :key="job.id">
+                                        <td><strong>{{ job.name }}</strong></td>
+                                        <td>{{ job.source_node_name }}</td>
+                                        <td>{{ job.dest_node_name }}</td>
+                                        <td>{{ job.vm_type === 'qemu' ? '🖥️' : '📦' }} {{ job.vm_id }}{{ job.dest_vm_id && job.dest_vm_id !== job.vm_id ? ` → ${job.dest_vm_id}` : '' }}</td>
+                                        <td>
+                                            <span v-if="job.schedule" class="badge badge-info">{{ job.schedule }}</span>
+                                            <span v-else class="badge badge-secondary">Manuale</span>
+                                        </td>
+                                        <td>
+                                            <span v-if="job.last_run">{{ formatDate(job.last_run) }}</span>
+                                            <span v-else style="color: var(--text-secondary);">Mai eseguito</span>
+                                        </td>
+                                        <td>
+                                            <span class="badge" 
+                                                  :class="job.last_status === 'success' ? 'badge-success' : 
+                                                         job.last_status === 'failed' ? 'badge-error' : 
+                                                         job.last_status === 'running' ? 'badge-warning' : 'badge-secondary'">
+                                                {{ job.last_status || 'pending' }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div style="display: flex; gap: 6px;">
+                                                <button class="btn btn-sm btn-primary" @click="runMigrationJob(job.id)" 
+                                                        :disabled="job.last_status === 'running' || !job.is_active">
+                                                    ▶️
+                                                </button>
+                                                <button class="btn btn-sm btn-secondary" @click="editMigrationJob(job)">
+                                                    ✏️
+                                                </button>
+                                                <button class="btn btn-sm" 
+                                                        :class="job.is_active ? 'btn-warning' : 'btn-success'"
+                                                        @click="toggleMigrationJob(job.id)">
+                                                    {{ job.is_active ? '⏸️' : '▶️' }}
+                                                </button>
+                                                <button class="btn btn-sm btn-danger" @click="deleteMigrationJob(job.id)">
+                                                    🗑️
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
             <div v-if="currentPage === 'logs'">
                 <div class="page-header">
                     <h1 class="page-title">Log Operazioni</h1>
@@ -5069,6 +5162,206 @@
             </div>
         </div>
         
+        <!-- Migration Job Modal -->
+        <div class="modal-overlay" v-if="isAuthenticated && showMigrationJobModal" @click.self="showMigrationJobModal = false">
+            <div class="modal" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header">
+                    <h3 class="modal-title">{{ editingMigrationJobId ? '✏️ Modifica Job Migrazione' : '➕ Nuovo Job Migrazione' }}</h3>
+                    <button class="btn btn-icon" @click="showMigrationJobModal = false">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">Nome Job *</label>
+                        <input type="text" class="form-input" v-model="newMigrationJob.name" placeholder="migrazione-vm-100">
+                    </div>
+                    
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label class="form-label">📤 Nodo Sorgente *</label>
+                            <select class="form-input" v-model="newMigrationJob.source_node_id" @change="loadMigrationSourceVMs">
+                                <option value="">-- Seleziona nodo --</option>
+                                <option v-for="n in nodes" :key="n.id" :value="n.id">{{ n.name }} ({{ n.hostname }})</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">📥 Nodo Destinazione *</label>
+                            <select class="form-input" v-model="newMigrationJob.dest_node_id" @change="loadMigrationDestResources">
+                                <option value="">-- Seleziona nodo --</option>
+                                <option v-for="n in nodes" :key="n.id" :value="n.id" :disabled="n.id == newMigrationJob.source_node_id">{{ n.name }} ({{ n.hostname }})</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div v-if="newMigrationJob.source_node_id" class="form-group">
+                        <label class="form-label">🖥️ VM da Migrare *</label>
+                        <select class="form-input" v-model="newMigrationJob.vm_id" @change="loadMigrationVmDetails">
+                            <option value="">-- Seleziona VM --</option>
+                            <option v-for="vm in sourceVMs" :key="vm.vmid" :value="vm.vmid">
+                                {{ vm.vmid }} - {{ vm.name || '(senza nome)' }} ({{ vm.type }})
+                            </option>
+                        </select>
+                    </div>
+                    
+                    <div v-if="selectedMigrationVm" style="background: rgba(0, 212, 255, 0.1); padding: 16px; border-radius: 8px; margin: 16px 0;">
+                        <h4 style="margin-bottom: 12px;">⚙️ Riconfigurazione Hardware</h4>
+                        
+                        <!-- CPU e RAM -->
+                        <div class="grid-3">
+                            <div class="form-group">
+                                <label class="form-label">RAM (MB)</label>
+                                <input type="number" class="form-input" v-model.number="newMigrationJob.hw_config.memory" 
+                                       :placeholder="selectedMigrationVm.memory || '1024'">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">CPU Cores</label>
+                                <input type="number" class="form-input" v-model.number="newMigrationJob.hw_config.cores" 
+                                       :placeholder="selectedMigrationVm.cores || '1'">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">CPU Sockets</label>
+                                <input type="number" class="form-input" v-model.number="newMigrationJob.hw_config.sockets" 
+                                       :placeholder="selectedMigrationVm.sockets || '1'">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">CPU Type</label>
+                            <select class="form-input" v-model="newMigrationJob.hw_config.cpu">
+                                <option value="">Mantieni originale</option>
+                                <option value="host">host</option>
+                                <option value="x86-64-v2-AES">x86-64-v2-AES</option>
+                                <option value="x86-64-v3">x86-64-v3</option>
+                                <option value="x86-64-v4">x86-64-v4</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Network Cards -->
+                        <div v-if="migrationVmNetworks.length > 0" style="margin-top: 16px;">
+                            <h5 style="margin-bottom: 8px;">🔌 Network Cards</h5>
+                            <div v-for="(net, idx) in migrationVmNetworks" :key="idx" style="margin-bottom: 12px; padding: 12px; background: var(--bg-primary); border-radius: 6px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <strong>{{ net.interface }}</strong>
+                                    <span style="font-size: 0.85em; color: var(--text-secondary);">{{ net.current_bridge || 'N/A' }}</span>
+                                </div>
+                                <select class="form-input" v-model="newMigrationJob.hw_config.network[net.interface]" 
+                                        @change="updateNetworkConfig(net.interface)">
+                                    <option :value="null">Mantieni bridge originale</option>
+                                    <option v-for="bridge in destNodeBridges" :key="bridge" :value="`bridge=${bridge}`">
+                                        {{ bridge }}
+                                    </option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <!-- Dischi -->
+                        <div v-if="migrationVmDisks.length > 0" style="margin-top: 16px;">
+                            <h5 style="margin-bottom: 8px;">💾 Dischi</h5>
+                            <div v-for="(disk, idx) in migrationVmDisks" :key="idx" style="margin-bottom: 12px; padding: 12px; background: var(--bg-primary); border-radius: 6px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <strong>{{ disk.name }}</strong>
+                                    <span style="font-size: 0.85em; color: var(--text-secondary);">{{ disk.size || 'N/A' }}</span>
+                                </div>
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <span style="color: var(--text-secondary);">Storage attuale: {{ disk.storage || 'N/A' }}</span>
+                                </div>
+                                <select class="form-input" v-model="newMigrationJob.hw_config.storage[disk.name]" 
+                                        style="margin-top: 8px;">
+                                    <option :value="null">Mantieni storage originale</option>
+                                    <option v-for="storage in destNodeStorages" :key="storage.storage" :value="storage.storage">
+                                        {{ storage.storage }} ({{ storage.type }}) - {{ storage.avail || 'N/A' }} disponibile
+                                    </option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <hr style="border-color: var(--border-color); margin: 20px 0;">
+                    
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label class="form-label">VMID Destinazione</label>
+                            <input type="number" class="form-input" v-model.number="newMigrationJob.dest_vm_id" 
+                                   :placeholder="newMigrationJob.vm_id || '100'">
+                            <small style="color: var(--text-secondary);">Lascia vuoto per usare stesso VMID</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Suffisso Nome VM</label>
+                            <input type="text" class="form-input" v-model="newMigrationJob.dest_vm_name_suffix" placeholder="-migrated">
+                        </div>
+                    </div>
+                    
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label class="form-label">Tipo Migrazione</label>
+                            <select class="form-input" v-model="newMigrationJob.migration_type">
+                                <option value="copy">📋 Copia (mantiene originale)</option>
+                                <option value="move">🚚 Sposta (elimina originale)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">📸 Snapshot</label>
+                            <div>
+                                <label style="display: flex; align-items: center; gap: 8px;">
+                                    <input type="checkbox" v-model="newMigrationJob.create_snapshot">
+                                    Crea snapshot prima della migrazione
+                                </label>
+                                <input v-if="newMigrationJob.create_snapshot" type="number" class="form-input" 
+                                       v-model.number="newMigrationJob.keep_snapshots" min="1" max="10" 
+                                       style="margin-top: 8px;">
+                                <small style="color: var(--text-secondary); display: block; margin-top: 4px;">
+                                    Mantieni ultimi N snapshot (1 per migrazione, più per replica)
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 8px;">
+                            <input type="checkbox" v-model="newMigrationJob.start_after_migration">
+                            ▶️ Avvia VM dopo migrazione
+                        </label>
+                    </div>
+                    
+                    <hr style="border-color: var(--border-color); margin: 20px 0;">
+                    
+                    <div class="form-group">
+                        <label class="form-label">Schedule</label>
+                        <select class="form-input" v-model="newMigrationJob.schedulePreset" @change="onSchedulePresetChange(newMigrationJob)">
+                            <option v-for="preset in schedulePresets" :key="preset.value" :value="preset.value">
+                                {{ preset.label }}
+                            </option>
+                        </select>
+                        <input v-if="newMigrationJob.schedulePreset === 'custom'" type="text" class="form-input" 
+                               v-model="newMigrationJob.schedule" placeholder="es: 0 2 * * *" style="margin-top: 8px;">
+                    </div>
+                    
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label class="form-label">📧 Notifiche Email</label>
+                            <select class="form-input" v-model="newMigrationJob.notify_mode">
+                                <option value="daily">📅 Solo nel riepilogo giornaliero</option>
+                                <option value="always">📨 Ad ogni esecuzione</option>
+                                <option value="failure">⚠️ Solo in caso di errore</option>
+                                <option value="never">🔕 Disabilitate</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Soggetto Email</label>
+                            <input type="text" class="form-input" v-model="newMigrationJob.notify_subject" 
+                                   placeholder="[MIGRAZIONE] {vm_name}">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showMigrationJobModal = false">Annulla</button>
+                    <button class="btn btn-primary" @click="saveMigrationJob" :disabled="loading">
+                        <span v-if="loading" class="spinner"></span>
+                        <span v-else>{{ editingMigrationJobId ? 'Salva' : 'Crea Job' }}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
         <!-- Sync Job Snapshot Management Modal -->
         <div class="modal-overlay" v-if="isAuthenticated && showSyncSnapshotModal" @click.self="showSyncSnapshotModal = false">
             <div class="modal" style="max-width: 800px;">
@@ -5690,6 +5983,40 @@
                     notify_subject: '',
                     is_active: true
                 });
+                // Migration Jobs
+                const migrationJobs = ref([]);
+                const showMigrationJobModal = ref(false);
+                const editingMigrationJobId = ref(null);
+                const selectedMigrationVm = ref(null);
+                const migrationVmDisks = ref([]);
+                const migrationVmNetworks = ref([]);
+                const destNodeStorages = ref([]);
+                const destNodeBridges = ref([]);
+                const newMigrationJob = ref({
+                    name: '',
+                    source_node_id: '',
+                    vm_id: '',
+                    vm_type: 'qemu',
+                    dest_node_id: '',
+                    dest_vm_id: '',
+                    dest_vm_name_suffix: '',
+                    migration_type: 'copy',
+                    create_snapshot: true,
+                    keep_snapshots: 1,
+                    start_after_migration: false,
+                    hw_config: {
+                        memory: null,
+                        cores: null,
+                        sockets: null,
+                        cpu: null,
+                        network: {},
+                        storage: {}
+                    },
+                    schedule: '',
+                    schedulePreset: '',
+                    notify_mode: 'daily',
+                    notify_subject: ''
+                });
                 const newRecoveryJob = ref({
                     name: '',
                     source_node_id: '',
@@ -5955,9 +6282,270 @@
                     return false;
                 };
                 
+                // === MIGRATION JOBS ===
+                const loadMigrationJobs = async () => {
+                    try { 
+                        migrationJobs.value = (await axios.get(`${API}/migration-jobs/`)).data; 
+                    } catch (e) { 
+                        showToast('Errore caricamento migration jobs', 'error'); 
+                    }
+                };
+                
+                const loadMigrationSourceVMs = async () => {
+                    if (!newMigrationJob.value.source_node_id) {
+                        sourceVMs.value = [];
+                        return;
+                    }
+                    try {
+                        const resp = await axios.get(`${API}/vms/node/${newMigrationJob.value.source_node_id}`);
+                        sourceVMs.value = resp.data || [];
+                    } catch (e) {
+                        console.error('Errore caricamento VM:', e);
+                        sourceVMs.value = [];
+                    }
+                };
+                
+                const loadMigrationDestResources = async () => {
+                    if (!newMigrationJob.value.dest_node_id) {
+                        destNodeStorages.value = [];
+                        destNodeBridges.value = [];
+                        return;
+                    }
+                    try {
+                        // Carica storage
+                        const storagesResp = await axios.get(`${API}/nodes/${newMigrationJob.value.dest_node_id}/storages`);
+                        destNodeStorages.value = storagesResp.data.storages || [];
+                        
+                        // Carica bridge
+                        const bridgesResp = await axios.get(`${API}/nodes/${newMigrationJob.value.dest_node_id}/bridges`);
+                        destNodeBridges.value = bridgesResp.data.bridges || [];
+                    } catch (e) {
+                        console.error('Errore caricamento risorse destinazione:', e);
+                        destNodeStorages.value = [];
+                        destNodeBridges.value = [];
+                    }
+                };
+                
+                const loadMigrationVmDetails = async () => {
+                    if (!newMigrationJob.value.vm_id || !newMigrationJob.value.source_node_id) {
+                        migrationVmDisks.value = [];
+                        migrationVmNetworks.value = [];
+                        selectedMigrationVm.value = null;
+                        return;
+                    }
+                    try {
+                        // Carica dettagli VM
+                        const vm = sourceVMs.value.find(v => v.vmid == newMigrationJob.value.vm_id);
+                        if (vm) {
+                            selectedMigrationVm.value = vm;
+                            newMigrationJob.value.vm_type = vm.type;
+                            
+                            // Carica dischi
+                            const disksResp = await axios.get(`${API}/vms/node/${newMigrationJob.value.source_node_id}/vm/${vm.vmid}/disks`);
+                            migrationVmDisks.value = disksResp.data.disks || [];
+                            
+                            // Carica config per network
+                            const configResp = await axios.get(`${API}/vms/node/${newMigrationJob.value.source_node_id}/vm/${vm.vmid}?vm_type=${vm.type}`);
+                            const config = configResp.data.config || '';
+                            
+                            // Estrai network cards dalla config
+                            const networkRegex = /^(net\d+):\s*(.+)$/gm;
+                            const networks = [];
+                            let match;
+                            while ((match = networkRegex.exec(config)) !== null) {
+                                const iface = match[1];
+                                const configStr = match[2];
+                                const bridgeMatch = configStr.match(/bridge=([^,\s]+)/);
+                                networks.push({
+                                    interface: iface,
+                                    current_bridge: bridgeMatch ? bridgeMatch[1] : null,
+                                    config: configStr
+                                });
+                            }
+                            migrationVmNetworks.value = networks;
+                        }
+                    } catch (e) {
+                        console.error('Errore caricamento dettagli VM:', e);
+                        migrationVmDisks.value = [];
+                        migrationVmNetworks.value = [];
+                    }
+                };
+                
+                const resetMigrationJobForm = () => {
+                    newMigrationJob.value = {
+                        name: '',
+                        source_node_id: '',
+                        vm_id: '',
+                        vm_type: 'qemu',
+                        dest_node_id: '',
+                        dest_vm_id: '',
+                        dest_vm_name_suffix: '',
+                        migration_type: 'copy',
+                        create_snapshot: true,
+                        keep_snapshots: 1,
+                        start_after_migration: false,
+                        hw_config: {
+                            memory: null,
+                            cores: null,
+                            sockets: null,
+                            cpu: null,
+                            network: {},
+                            storage: {}
+                        },
+                        schedule: '',
+                        schedulePreset: '',
+                        notify_mode: 'daily',
+                        notify_subject: ''
+                    };
+                    selectedMigrationVm.value = null;
+                    migrationVmDisks.value = [];
+                    migrationVmNetworks.value = [];
+                    destNodeStorages.value = [];
+                    destNodeBridges.value = [];
+                };
+                
+                const saveMigrationJob = async () => {
+                    if (!newMigrationJob.value.name || !newMigrationJob.value.source_node_id || 
+                        !newMigrationJob.value.dest_node_id || !newMigrationJob.value.vm_id) {
+                        showToast('Compila tutti i campi obbligatori', 'error');
+                        return;
+                    }
+                    
+                    loading.value = true;
+                    try {
+                        // Pulisci hw_config da valori null
+                        const hwConfig = {};
+                        if (newMigrationJob.value.hw_config.memory) hwConfig.memory = newMigrationJob.value.hw_config.memory;
+                        if (newMigrationJob.value.hw_config.cores) hwConfig.cores = newMigrationJob.value.hw_config.cores;
+                        if (newMigrationJob.value.hw_config.sockets) hwConfig.sockets = newMigrationJob.value.hw_config.sockets;
+                        if (newMigrationJob.value.hw_config.cpu) hwConfig.cpu = newMigrationJob.value.hw_config.cpu;
+                        if (Object.keys(newMigrationJob.value.hw_config.network).length > 0) {
+                            hwConfig.network = {};
+                            for (const [key, value] of Object.entries(newMigrationJob.value.hw_config.network)) {
+                                if (value) hwConfig.network[key] = value;
+                            }
+                        }
+                        if (Object.keys(newMigrationJob.value.hw_config.storage).length > 0) {
+                            hwConfig.storage = {};
+                            for (const [key, value] of Object.entries(newMigrationJob.value.hw_config.storage)) {
+                                if (value) hwConfig.storage[key] = value;
+                            }
+                        }
+                        
+                        const payload = {
+                            name: newMigrationJob.value.name,
+                            source_node_id: newMigrationJob.value.source_node_id,
+                            vm_id: parseInt(newMigrationJob.value.vm_id),
+                            vm_type: newMigrationJob.value.vm_type,
+                            dest_node_id: newMigrationJob.value.dest_node_id,
+                            dest_vm_id: newMigrationJob.value.dest_vm_id || null,
+                            dest_vm_name_suffix: newMigrationJob.value.dest_vm_name_suffix || null,
+                            migration_type: newMigrationJob.value.migration_type,
+                            create_snapshot: newMigrationJob.value.create_snapshot,
+                            keep_snapshots: newMigrationJob.value.keep_snapshots,
+                            start_after_migration: newMigrationJob.value.start_after_migration,
+                            hw_config: Object.keys(hwConfig).length > 0 ? hwConfig : null,
+                            schedule: newMigrationJob.value.schedule || null,
+                            notify_mode: newMigrationJob.value.notify_mode,
+                            notify_subject: newMigrationJob.value.notify_subject || null
+                        };
+                        
+                        if (editingMigrationJobId.value) {
+                            await axios.put(`${API}/migration-jobs/${editingMigrationJobId.value}`, payload);
+                            showToast('Job aggiornato!', 'success');
+                        } else {
+                            await axios.post(`${API}/migration-jobs/`, payload);
+                            showToast('Job creato!', 'success');
+                        }
+                        
+                        showMigrationJobModal.value = false;
+                        editingMigrationJobId.value = null;
+                        resetMigrationJobForm();
+                        loadMigrationJobs();
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore salvataggio', 'error');
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+                
+                const editMigrationJob = async (job) => {
+                    editingMigrationJobId.value = job.id;
+                    newMigrationJob.value = {
+                        name: job.name,
+                        source_node_id: job.source_node_id,
+                        vm_id: job.vm_id.toString(),
+                        vm_type: job.vm_type,
+                        dest_node_id: job.dest_node_id,
+                        dest_vm_id: job.dest_vm_id || '',
+                        dest_vm_name_suffix: job.dest_vm_name_suffix || '',
+                        migration_type: job.migration_type,
+                        create_snapshot: job.create_snapshot,
+                        keep_snapshots: job.keep_snapshots,
+                        start_after_migration: job.start_after_migration,
+                        hw_config: job.hw_config || {
+                            memory: null,
+                            cores: null,
+                            sockets: null,
+                            cpu: null,
+                            network: {},
+                            storage: {}
+                        },
+                        schedule: job.schedule || '',
+                        schedulePreset: getSchedulePreset(job.schedule),
+                        notify_mode: job.notify_mode || 'daily',
+                        notify_subject: job.notify_subject || ''
+                    };
+                    
+                    // Carica dettagli VM
+                    await loadMigrationSourceVMs();
+                    await loadMigrationDestResources();
+                    await loadMigrationVmDetails();
+                    
+                    showMigrationJobModal.value = true;
+                };
+                
+                const deleteMigrationJob = async (jobId) => {
+                    if (!confirm('Eliminare questo job di migrazione?')) return;
+                    try {
+                        await axios.delete(`${API}/migration-jobs/${jobId}`);
+                        showToast('Job eliminato!', 'success');
+                        loadMigrationJobs();
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore eliminazione', 'error');
+                    }
+                };
+                
+                const runMigrationJob = async (jobId) => {
+                    if (!confirm('Eseguire la migrazione ora?')) return;
+                    loading.value = true;
+                    try {
+                        await axios.post(`${API}/migration-jobs/${jobId}/run`);
+                        showToast('Migrazione avviata!', 'success');
+                        loadMigrationJobs();
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore avvio migrazione', 'error');
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+                
+                const toggleMigrationJob = async (jobId) => {
+                    try {
+                        await axios.post(`${API}/migration-jobs/${jobId}/toggle`);
+                        loadMigrationJobs();
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore', 'error');
+                    }
+                };
+                
+                const updateNetworkConfig = (iface) => {
+                    // Funzione helper per aggiornare config network
+                };
+                
                 // Data loading
                 const loadAllData = async () => {
-                    await Promise.all([loadNodes(), loadSyncJobs(), loadRecoveryJobs(), loadLogs(), loadUsers(), loadSSHKeyInfo()]);
+                    await Promise.all([loadNodes(), loadSyncJobs(), loadRecoveryJobs(), loadMigrationJobs(), loadLogs(), loadUsers(), loadSSHKeyInfo()]);
                 };
                 
                 const loadNodes = async () => {
@@ -8180,6 +8768,9 @@
                     } else if (newPage === 'host-backup') {
                         loadHostBackupData();
                         loadNodes();
+                    } else if (newPage === 'migration') {
+                        loadMigrationJobs();
+                        loadNodes();
                     }
                 });
                 
@@ -8211,6 +8802,9 @@
                     // Backup Jobs
                     backupJobs, sourceVmsForBackup, backupPbsStorages, newBackupJob, showEditBackupJobModal, editingBackupJob,
                     loadBackupJobs, loadSourceVmsForBackup, loadBackupPbsStorages, selectBackupVm, createBackupJob, runBackupJob, deleteBackupJob, editBackupJob, saveBackupJob,
+                    // Migration Jobs
+                    migrationJobs, showMigrationJobModal, editingMigrationJobId, selectedMigrationVm, migrationVmDisks, migrationVmNetworks, destNodeStorages, destNodeBridges, newMigrationJob,
+                    loadMigrationJobs, loadMigrationSourceVMs, loadMigrationDestResources, loadMigrationVmDetails, resetMigrationJobForm, saveMigrationJob, editMigrationJob, deleteMigrationJob, runMigrationJob, toggleMigrationJob, updateNetworkConfig,
                     // Restore from PBS
                     selectedRestorePbs, restorePbsBackups, showRestoreModal, restoreData, restoreStorages,
                     expandedBackupGroups, groupedRestoreBackups, toggleBackupGroup,
