@@ -898,14 +898,23 @@ async def restart_server(
         ip_address=request.client.host if request.client else None
     )
     
-    # Programma il riavvio in background
-    import asyncio
+    # Programma il riavvio in background usando subprocess.Popen (non bloccante)
+    import subprocess
+    import threading
     
-    async def delayed_restart():
-        await asyncio.sleep(1)  # Attendi 1 secondo per permettere la risposta
-        os.system('systemctl restart dapx-backandrepl')
+    def delayed_restart():
+        import time
+        time.sleep(1)  # Attendi 1 secondo per permettere la risposta HTTP
+        # Prova diversi nomi di servizio
+        for service in ["dapx-backandrepl", "sanoid-manager"]:
+            result = subprocess.run(["systemctl", "is-active", service], capture_output=True)
+            if result.returncode == 0:
+                subprocess.Popen(["systemctl", "restart", service])
+                break
     
-    asyncio.create_task(delayed_restart())
+    # Esegui in un thread separato
+    thread = threading.Thread(target=delayed_restart, daemon=True)
+    thread.start()
     
     return {
         "success": True,
