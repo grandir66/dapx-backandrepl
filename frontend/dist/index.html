@@ -6422,7 +6422,8 @@
                         if (Object.keys(newMigrationJob.value.hw_config.network).length > 0) {
                             hwConfig.network = {};
                             for (const [key, value] of Object.entries(newMigrationJob.value.hw_config.network)) {
-                                if (value) hwConfig.network[key] = value;
+                                // Il valore è il nome del bridge, lo formattiamo come "bridge=vmbr1"
+                                if (value) hwConfig.network[key] = `bridge=${value}`;
                             }
                         }
                         if (Object.keys(newMigrationJob.value.hw_config.storage).length > 0) {

@@ -77,7 +77,9 @@ class NotificationService:
         details: Optional[str] = None,
         job_id: Optional[int] = None,
         is_scheduled: bool = False,
-        notify_mode: str = "daily"  # daily, always, failure, never
+        notify_mode: str = "daily",  # daily, always, failure, never
+        transferred: Optional[str] = None,  # Dati trasferiti (es: "10.5 GiB")
+        job_type: Optional[str] = None  # Tipo job (sync, backup, migration, recovery)
     ) -> Dict[str, Any]:
         """
         Invia notifica per un job completato su tutti i canali abilitati.
@@ -93,6 +95,8 @@ class NotificationService:
             job_id: ID del job (per tracking notifiche giornaliere)
             is_scheduled: True se job schedulato/ricorrente
             notify_mode: Modalità notifica del job (daily, always, failure, never)
+            transferred: Dati trasferiti (es: "10.5 GiB")
+            job_type: Tipo job (sync, backup, migration, recovery)
         
         Returns:
             Dict con risultati per ogni canale
