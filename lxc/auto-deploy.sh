@@ -145,63 +145,83 @@ if ! ip addr show | grep -q "${NETWORK_BRIDGE}:"; then
     exit 1
 fi
 
-# Verifica template
-TEMPLATE_NAME="${TEMPLATE%.tar.zst}"
-TEMPLATE_BASE="${TEMPLATE_NAME%_*}"
-
+# Verifica template - prima cerca template già presenti
 if [ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]; then
     log_warning "Template ${TEMPLATE} non trovato."
     
-    # Lista template disponibili
-    log_info "Template disponibili:"
-    pveam available --section system | grep -i debian | head -5 || true
-    
-    # Prova a scaricare template Debian
-    log_info "Download template Debian (questo può richiedere alcuni minuti)..."
-    
-    # Prova diversi formati di nome template
-    if pveam download local ${TEMPLATE_NAME} 2>/dev/null; then
-        log_success "Template scaricato: ${TEMPLATE_NAME}"
-    elif pveam download local debian-12-standard 2>/dev/null; then
-        log_success "Template scaricato: debian-12-standard"
-        # Trova il file scaricato
-        TEMPLATE=$(ls -t /var/lib/vz/template/cache/debian-12-standard*.tar.zst 2>/dev/null | head -1)
-        if [ -n "${TEMPLATE}" ]; then
-            TEMPLATE=$(basename ${TEMPLATE})
-            log_info "Usando template: ${TEMPLATE}"
-        fi
-    elif pveam download local debian-11-standard 2>/dev/null; then
-        log_success "Template scaricato: debian-11-standard"
-        TEMPLATE=$(ls -t /var/lib/vz/template/cache/debian-11-standard*.tar.zst 2>/dev/null | head -1)
-        if [ -n "${TEMPLATE}" ]; then
-            TEMPLATE=$(basename ${TEMPLATE})
-            log_info "Usando template: ${TEMPLATE}"
-        fi
+    # Cerca template Debian già presenti
+    EXISTING_TEMPLATE=$(ls -t /var/lib/vz/template/cache/debian*.tar.zst 2>/dev/null | head -1)
+    if [ -n "${EXISTING_TEMPLATE}" ]; then
+        TEMPLATE=$(basename ${EXISTING_TEMPLATE})
+        log_success "Trovato template esistente: ${TEMPLATE}"
     else
-        log_error "Impossibile scaricare template."
-        log_info "Template disponibili da scaricare:"
-        pveam available --section system | grep -i debian | head -10
-        log_info ""
-        log_info "Scarica manualmente un template Debian:"
-        echo "  pveam download local <nome-template>"
+        # Nessun template presente, prova a scaricarne uno
+        log_info "Nessun template Debian trovato. Tentativo download..."
+        
+        # Aggiorna repository template
+        log_info "Aggiornamento repository template..."
+        pveam update > /dev/null 2>&1 || true
+        
+        # Lista template disponibili
+        log_info "Template Debian disponibili:"
+        pveam available --section system 2>/dev/null | grep -i debian | head -5 || echo "  Nessun template Debian disponibile"
         echo ""
-        log_info "Oppure usa un template già presente:"
-        ls -lh /var/lib/vz/template/cache/*.tar.zst 2>/dev/null | head -5 || echo "  Nessun template trovato"
-        exit 1
-    fi
-    
-    # Verifica che il template sia stato scaricato
-    if [ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]; then
-        # Cerca qualsiasi template Debian
-        TEMPLATE=$(ls -t /var/lib/vz/template/cache/debian*.tar.zst 2>/dev/null | head -1)
-        if [ -z "${TEMPLATE}" ]; then
-            log_error "Nessun template Debian trovato dopo il download"
+        
+        # Prova a scaricare template Debian
+        log_info "Tentativo download template Debian..."
+        
+        # Lista di template da provare (in ordine di preferenza)
+        TEMPLATES_TO_TRY=(
+            "debian-12-standard"
+            "debian-11-standard"
+            "debian-10-standard"
+            "ubuntu-22.04-standard"
+            "ubuntu-20.04-standard"
+        )
+        
+        DOWNLOADED=0
+        for TEMPLATE_NAME in "${TEMPLATES_TO_TRY[@]}"; do
+            log_info "Tentativo: ${TEMPLATE_NAME}..."
+            if pveam download local "${TEMPLATE_NAME}" 2>/dev/null; then
+                log_success "Template scaricato: ${TEMPLATE_NAME}"
+                # Trova il file scaricato
+                DOWNLOADED_TEMPLATE=$(ls -t /var/lib/vz/template/cache/${TEMPLATE_NAME}*.tar.zst 2>/dev/null | head -1)
+                if [ -n "${DOWNLOADED_TEMPLATE}" ]; then
+                    TEMPLATE=$(basename ${DOWNLOADED_TEMPLATE})
+                    log_info "Usando template: ${TEMPLATE}"
+                    DOWNLOADED=1
+                    break
+                fi
+            fi
+        done
+        
+        if [ ${DOWNLOADED} -eq 0 ]; then
+            log_error "Impossibile scaricare template automaticamente."
+            echo ""
+            log_info "Template disponibili nel sistema:"
+            ls -lh /var/lib/vz/template/cache/*.tar.zst 2>/dev/null | head -5 || echo "  Nessun template trovato"
+            echo ""
+            log_info "Istruzioni:"
+            echo "1. Aggiorna repository: pveam update"
+            echo "2. Lista template: pveam available --section system | grep debian"
+            echo "3. Scarica template: pveam download local <nome-template>"
+            echo ""
+            log_info "Oppure usa uno script helper:"
+            echo "  wget https://raw.githubusercontent.com/grandir66/dapx-backandrepl/main/lxc/find-template.sh"
+            echo "  chmod +x find-template.sh"
+            echo "  ./find-template.sh"
             exit 1
         fi
-        TEMPLATE=$(basename ${TEMPLATE})
-        log_info "Usando template trovato: ${TEMPLATE}"
     fi
 fi
+
+# Verifica finale che il template esista
+if [ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]; then
+    log_error "Template ${TEMPLATE} non trovato in /var/lib/vz/template/cache/"
+    exit 1
+fi
+
+log_success "Template verificato: ${TEMPLATE}"
 
 log_success "Prerequisiti verificati"
 
