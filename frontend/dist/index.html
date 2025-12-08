@@ -3684,20 +3684,163 @@
                         <div>
                             <h3 style="color: #64b5f6; margin-bottom: 8px;">Cos'è l'Host Config Backup?</h3>
                             <p style="color: var(--text-secondary); line-height: 1.6;">
-                                Questa funzionalità esegue il backup dei <strong>file di configurazione del sistema Proxmox</strong> (non delle VM).<br>
-                                Include: <code>/etc/pve</code>, <code>/etc/network</code>, configurazione cluster, chiavi SSH, cron jobs e altri file critici.<br>
-                                <strong>Utile per:</strong> Disaster recovery, migrazioni server, ripristino configurazione dopo reinstallazione.
+                                Backup dei <strong>file di configurazione del sistema Proxmox</strong> (non delle VM).<br>
+                                Include: <code>/etc/pve</code>, <code>/etc/network</code>, configurazione cluster, chiavi SSH, cron jobs.<br>
+                                <strong>Utile per:</strong> Disaster recovery, migrazioni server, ripristino configurazione.
                             </p>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Selezione Nodo -->
+                <!-- Crea Nuovo Job -->
                 <div class="card">
-                    <h3 style="margin-bottom: 1rem;">📂 Seleziona Nodo</h3>
+                    <h3 class="card-title">➕ Crea Job Host Backup Schedulato</h3>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label class="form-label">Nome Job</label>
+                            <input type="text" class="form-input" v-model="hostBackupJob.name" placeholder="Backup Config PVE">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Nodo</label>
+                            <select class="form-input" v-model="hostBackupJob.node_id" @change="loadHostBackupPaths">
+                                <option value="">-- Seleziona nodo --</option>
+                                <option v-for="node in nodes.filter(n => n.node_type === 'pve' || n.node_type === 'pbs')" :key="node.id" :value="node.id">
+                                    {{ node.name }} ({{ node.node_type?.toUpperCase() }})
+                                </option>
+                            </select>
+                        </div>
+                    </div>
                     <div class="grid-3">
                         <div class="form-group">
-                            <label class="form-label">Nodo Proxmox</label>
+                            <label class="form-label">Schedule</label>
+                            <select class="form-input" v-model="hostBackupJob.schedulePreset" @change="onSchedulePresetChange(hostBackupJob)">
+                                <option v-for="preset in schedulePresets" :key="preset.value" :value="preset.value">
+                                    {{ preset.label }}
+                                </option>
+                            </select>
+                            <input v-if="hostBackupJob.schedulePreset === 'custom'" type="text" class="form-input" v-model="hostBackupJob.schedule" placeholder="es: 0 2 * * *" style="margin-top: 8px;">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Retention (mantieni ultimi)</label>
+                            <input type="number" class="form-input" v-model="hostBackupJob.keep_last" min="1" max="100">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Percorso Destinazione</label>
+                            <input type="text" class="form-input" v-model="hostBackupJob.dest_path" placeholder="/var/backups/proxmox-config">
+                        </div>
+                    </div>
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label class="form-label">
+                                <input type="checkbox" v-model="hostBackupJob.compress"> Comprimi (gzip)
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">
+                                <input type="checkbox" v-model="hostBackupJob.encrypt"> Cripta (AES-256)
+                            </label>
+                        </div>
+                        <div class="form-group" v-if="hostBackupJob.encrypt">
+                            <label class="form-label">Password Cifratura</label>
+                            <input type="password" class="form-input" v-model="hostBackupJob.encrypt_password" placeholder="Password">
+                        </div>
+                    </div>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label class="form-label">📧 Notifiche Email</label>
+                            <select class="form-input" v-model="hostBackupJob.notify_mode">
+                                <option value="daily">📅 Solo nel riepilogo giornaliero</option>
+                                <option value="always">📨 Ad ogni esecuzione</option>
+                                <option value="failure">⚠️ Solo in caso di errore</option>
+                                <option value="never">🔕 Disabilitate</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Soggetto Email</label>
+                            <input type="text" class="form-input" v-model="hostBackupJob.notify_subject" placeholder="[HOST BACKUP] {node_name}">
+                        </div>
+                    </div>
+                    <div style="margin-top: 16px;">
+                        <button class="btn btn-primary" @click="createHostBackupJob" :disabled="loading || !hostBackupJob.name || !hostBackupJob.node_id">
+                            ➕ Crea Job
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Lista Job Esistenti -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">📋 Job Host Backup Configurati</h3>
+                        <button class="btn btn-secondary btn-sm" @click="loadHostBackupJobs">🔄 Aggiorna</button>
+                    </div>
+                    <table class="table" v-if="hostBackupJobs.length > 0">
+                        <thead>
+                            <tr>
+                                <th>Nome</th>
+                                <th>Nodo</th>
+                                <th>Schedule</th>
+                                <th>Retention</th>
+                                <th>Ultimo Backup</th>
+                                <th>Stato</th>
+                                <th>Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="job in hostBackupJobs" :key="job.id">
+                                <td>
+                                    <strong>{{ job.name }}</strong>
+                                    <div style="font-size: 0.85em; color: var(--text-secondary);">
+                                        {{ job.compress ? '📦 Compresso' : '' }} {{ job.encrypt ? '🔐 Cifrato' : '' }}
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="badge" :class="job.node_type === 'pve' ? 'badge-primary' : 'badge-info'">
+                                        {{ job.node_name }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span v-if="job.schedule" class="badge badge-primary">{{ formatSchedule(job.schedule) }}</span>
+                                    <span v-else class="badge badge-secondary">Manuale</span>
+                                </td>
+                                <td>{{ job.keep_last }}</td>
+                                <td>
+                                    <div v-if="job.last_backup_time">
+                                        {{ formatDate(job.last_backup_time) }}
+                                        <div style="font-size: 0.85em; color: var(--text-secondary);">
+                                            {{ job.last_duration ? job.last_duration + 's' : '' }}
+                                        </div>
+                                    </div>
+                                    <span v-else style="color: var(--text-secondary);">Mai</span>
+                                </td>
+                                <td>
+                                    <span v-if="job.current_status === 'running'" class="badge badge-warning">⏳ In corso</span>
+                                    <span v-else-if="job.last_status === 'success'" class="badge badge-success">✓ OK</span>
+                                    <span v-else-if="job.last_status === 'failed'" class="badge badge-danger">✗ Errore</span>
+                                    <span v-else class="badge badge-secondary">—</span>
+                                </td>
+                                <td>
+                                    <div style="display: flex; gap: 4px;">
+                                        <button class="btn btn-sm btn-primary" @click="runHostBackupJob(job.id)" :disabled="loading" title="Esegui ora">▶️</button>
+                                        <button class="btn btn-sm btn-secondary" @click="editHostBackupJob(job)" title="Modifica">✏️</button>
+                                        <button class="btn btn-sm btn-danger" @click="deleteHostBackupJob(job.id)" title="Elimina">🗑️</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div v-else class="empty-state">
+                        <p>Nessun job configurato. Crea un nuovo job per iniziare.</p>
+                    </div>
+                </div>
+                
+                <!-- Backup Manuale Rapido -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">⚡ Backup Manuale Rapido</h3>
+                    </div>
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label class="form-label">Nodo</label>
                             <select class="form-input" v-model="hostBackup.selectedNodeId" @change="loadHostBackupPaths">
                                 <option value="">-- Seleziona nodo --</option>
                                 <option v-for="node in nodes.filter(n => n.node_type === 'pve' || n.node_type === 'pbs')" :key="node.id" :value="node.id">
@@ -3706,121 +3849,71 @@
                             </select>
                         </div>
                         <div class="form-group" v-if="hostBackup.hostType">
-                            <label class="form-label">Tipo Rilevato</label>
+                            <label class="form-label">Tipo</label>
                             <div class="form-input" style="background: var(--bg-tertiary); border: none;">
                                 <span :class="hostBackup.hostType === 'pve' ? 'badge badge-primary' : 'badge badge-info'">
-                                    {{ hostBackup.hostType === 'pve' ? '🖥️ Proxmox VE' : '🗄️ Proxmox Backup Server' }}
+                                    {{ hostBackup.hostType === 'pve' ? '🖥️ PVE' : '🗄️ PBS' }}
                                 </span>
+                                <span v-if="hostBackup.totalSizeHuman" style="margin-left: 8px;">{{ hostBackup.totalSizeHuman }}</span>
                             </div>
                         </div>
-                        <div class="form-group" v-if="hostBackup.totalSize">
-                            <label class="form-label">Dimensione Totale</label>
-                            <div class="form-input" style="background: var(--bg-tertiary); border: none;">
-                                {{ hostBackup.totalSizeHuman }}
-                            </div>
+                        <div class="form-group" style="display: flex; align-items: flex-end;">
+                            <button class="btn btn-primary" @click="createHostBackup" :disabled="loading || !hostBackup.selectedNodeId">
+                                💾 Backup Ora
+                            </button>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Percorsi Backup -->
-                <div class="card" v-if="hostBackup.paths.length > 0">
-                    <div class="card-header">
-                        <h3 class="card-title">📁 Percorsi Configurazione</h3>
-                        <span class="badge badge-info">{{ hostBackup.existingPaths }} / {{ hostBackup.paths.length }} presenti</span>
-                    </div>
-                    <div style="max-height: 300px; overflow-y: auto;">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Percorso</th>
-                                    <th>Stato</th>
-                                    <th>Dimensione</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr v-for="path in hostBackup.paths" :key="path.path">
-                                    <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85em;">{{ path.path }}</td>
-                                    <td>
-                                        <span v-if="path.exists" class="badge badge-success">✓ Presente</span>
-                                        <span v-else class="badge badge-secondary">— Non presente</span>
-                                    </td>
-                                    <td>{{ path.exists ? path.size_human : '-' }}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                
-                <!-- Opzioni Backup -->
-                <div class="card" v-if="hostBackup.selectedNodeId">
-                    <h3 class="card-title">⚙️ Opzioni Backup</h3>
-                    <div class="grid-3">
-                        <div class="form-group">
-                            <label class="form-label">
-                                <input type="checkbox" v-model="hostBackup.compress" checked> Comprimi (gzip)
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">
-                                <input type="checkbox" v-model="hostBackup.encrypt"> Cripta (AES-256)
-                            </label>
-                        </div>
-                        <div class="form-group" v-if="hostBackup.encrypt">
-                            <label class="form-label">Password Cifratura</label>
-                            <input type="password" class="form-input" v-model="hostBackup.encryptPassword" placeholder="Password per cifratura">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Percorso Destinazione</label>
-                        <input type="text" class="form-input" v-model="hostBackup.destPath" placeholder="/var/backups/proxmox-config">
-                    </div>
-                    <div style="margin-top: 16px;">
-                        <button class="btn btn-primary" @click="createHostBackup" :disabled="loading || !hostBackup.selectedNodeId">
-                            <span v-if="loading" class="spinner"></span>
-                            <span v-else>💾 Crea Backup Configurazione</span>
-                        </button>
-                    </div>
-                </div>
-                
-                <!-- Lista Backup Esistenti -->
+                <!-- Lista Backup Esistenti sul Nodo -->
                 <div class="card" v-if="hostBackup.selectedNodeId && hostBackup.backups.length > 0">
                     <div class="card-header">
-                        <h3 class="card-title">📋 Backup Esistenti</h3>
+                        <h3 class="card-title">📋 Backup sul Nodo</h3>
                         <div style="display: flex; gap: 8px;">
-                            <button class="btn btn-secondary btn-sm" @click="loadHostBackups">🔄 Aggiorna</button>
-                            <button class="btn btn-warning btn-sm" @click="applyHostRetention" title="Mantieni ultimi 7 backup">🗑️ Retention (7)</button>
+                            <button class="btn btn-secondary btn-sm" @click="loadHostBackups">🔄</button>
+                            <button class="btn btn-warning btn-sm" @click="showHostRetentionModal = true">🗑️ Retention</button>
                         </div>
                     </div>
                     <table class="table">
                         <thead>
-                            <tr>
-                                <th>File</th>
-                                <th>Dimensione</th>
-                                <th>Data</th>
-                                <th>Cifrato</th>
-                                <th>Azioni</th>
-                            </tr>
+                            <tr><th>File</th><th>Dimensione</th><th>Data</th><th>Azioni</th></tr>
                         </thead>
                         <tbody>
                             <tr v-for="backup in hostBackup.backups" :key="backup.filename">
-                                <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85em;">{{ backup.filename }}</td>
+                                <td style="font-family: monospace; font-size: 0.85em;">
+                                    {{ backup.filename }}
+                                    <span v-if="backup.encrypted" class="badge badge-warning" style="margin-left: 8px;">🔐</span>
+                                </td>
                                 <td>{{ backup.size_human }}</td>
                                 <td>{{ backup.date }}</td>
                                 <td>
-                                    <span v-if="backup.encrypted" class="badge badge-warning">🔐 Cifrato</span>
-                                    <span v-else class="badge badge-secondary">—</span>
-                                </td>
-                                <td>
-                                    <button class="btn btn-sm btn-danger" @click="deleteHostBackup(backup)" title="Elimina">🗑️</button>
+                                    <button class="btn btn-sm btn-danger" @click="deleteHostBackup(backup)">🗑️</button>
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
-                
-                <div class="card" v-if="hostBackup.selectedNodeId && hostBackup.backups.length === 0 && !loading">
-                    <div class="empty-state">
-                        <p>Nessun backup esistente per questo nodo.</p>
+            </div>
+            
+            <!-- Modal Retention Host Backup -->
+            <div class="modal-overlay" v-if="showHostRetentionModal" @click.self="showHostRetentionModal = false">
+                <div class="modal" style="max-width: 400px;">
+                    <div class="modal-header">
+                        <h3 class="modal-title">🗑️ Applica Retention</h3>
+                        <button class="btn btn-icon" @click="showHostRetentionModal = false">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label class="form-label">Mantieni ultimi N backup</label>
+                            <input type="number" class="form-input" v-model="hostRetentionCount" min="1" max="100">
+                        </div>
+                        <p style="color: var(--text-secondary); font-size: 0.9em;">
+                            I backup più vecchi verranno eliminati. Attualmente ci sono {{ hostBackup.backups.length }} backup.
+                        </p>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" @click="showHostRetentionModal = false">Annulla</button>
+                        <button class="btn btn-warning" @click="applyHostRetention">Applica</button>
                     </div>
                 </div>
             </div>
@@ -5214,6 +5307,23 @@
                     destPath: '/var/backups/proxmox-config',
                     backups: []
                 });
+                const hostBackupJobs = ref([]);
+                const hostBackupJob = ref({
+                    name: '',
+                    node_id: '',
+                    dest_path: '/var/backups/proxmox-config',
+                    compress: true,
+                    encrypt: false,
+                    encrypt_password: '',
+                    keep_last: 7,
+                    schedule: '',
+                    schedulePreset: '',
+                    is_active: true,
+                    notify_mode: 'daily',
+                    notify_subject: ''
+                });
+                const showHostRetentionModal = ref(false);
+                const hostRetentionCount = ref(7);
                 
                 // Computed: raggruppa backup per VM/CT ID
                 const groupedRestoreBackups = computed(() => {
@@ -5681,13 +5791,25 @@
                 
                 // === HOST CONFIG BACKUP ===
                 const loadHostBackupData = async () => {
-                    if (!hostBackup.value.selectedNodeId) return;
-                    await loadHostBackupPaths();
-                    await loadHostBackups();
+                    await loadHostBackupJobs();
+                    if (hostBackup.value.selectedNodeId) {
+                        await loadHostBackupPaths();
+                        await loadHostBackups();
+                    }
+                };
+                
+                const loadHostBackupJobs = async () => {
+                    try {
+                        const resp = await axios.get(`${API}/host-backup/jobs`);
+                        hostBackupJobs.value = resp.data.jobs || [];
+                    } catch (e) {
+                        console.error('Errore caricamento host backup jobs:', e);
+                    }
                 };
                 
                 const loadHostBackupPaths = async () => {
-                    if (!hostBackup.value.selectedNodeId) {
+                    const nodeId = hostBackup.value.selectedNodeId || hostBackupJob.value.node_id;
+                    if (!nodeId) {
                         hostBackup.value.paths = [];
                         hostBackup.value.hostType = '';
                         return;
@@ -5695,13 +5817,13 @@
                     
                     loading.value = true;
                     try {
-                        const resp = await axios.get(`${API}/host-backup/nodes/${hostBackup.value.selectedNodeId}/backup-paths`);
+                        const resp = await axios.get(`${API}/host-backup/nodes/${nodeId}/backup-paths`);
                         hostBackup.value.paths = resp.data.paths || [];
                         hostBackup.value.hostType = resp.data.host_type;
                         hostBackup.value.totalSize = resp.data.total_size;
                         hostBackup.value.totalSizeHuman = resp.data.total_size_human;
                         hostBackup.value.existingPaths = resp.data.existing_paths;
-                        await loadHostBackups();
+                        if (hostBackup.value.selectedNodeId) await loadHostBackups();
                     } catch (e) {
                         showToast(e.response?.data?.detail || 'Errore caricamento percorsi', 'error');
                     }
@@ -5718,6 +5840,61 @@
                         hostBackup.value.backups = resp.data.backups || [];
                     } catch (e) {
                         console.error('Errore caricamento backup host:', e);
+                    }
+                };
+                
+                const createHostBackupJob = async () => {
+                    if (!hostBackupJob.value.name || !hostBackupJob.value.node_id) {
+                        showToast('Compila nome e nodo', 'error');
+                        return;
+                    }
+                    
+                    loading.value = true;
+                    try {
+                        await axios.post(`${API}/host-backup/jobs`, hostBackupJob.value);
+                        showToast('Job creato con successo', 'success');
+                        hostBackupJob.value = {
+                            name: '', node_id: '', dest_path: '/var/backups/proxmox-config',
+                            compress: true, encrypt: false, encrypt_password: '',
+                            keep_last: 7, schedule: '', schedulePreset: '',
+                            is_active: true, notify_mode: 'daily', notify_subject: ''
+                        };
+                        await loadHostBackupJobs();
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore creazione job', 'error');
+                    }
+                    loading.value = false;
+                };
+                
+                const runHostBackupJob = async (jobId) => {
+                    loading.value = true;
+                    showToast('Avvio backup...', 'info');
+                    try {
+                        const resp = await axios.post(`${API}/host-backup/jobs/${jobId}/run`);
+                        showToast(`Backup completato: ${resp.data.backup_name} (${resp.data.size_human})`, 'success');
+                        await loadHostBackupJobs();
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore esecuzione backup', 'error');
+                    }
+                    loading.value = false;
+                };
+                
+                const editHostBackupJob = (job) => {
+                    hostBackupJob.value = {
+                        ...job,
+                        schedulePreset: getSchedulePreset(job.schedule)
+                    };
+                    showToast('Modifica il job e clicca "Crea Job" per salvare le modifiche', 'info');
+                };
+                
+                const deleteHostBackupJob = async (jobId) => {
+                    if (!confirm('Eliminare questo job?')) return;
+                    try {
+                        await axios.delete(`${API}/host-backup/jobs/${jobId}`);
+                        showToast('Job eliminato', 'success');
+                        await loadHostBackupJobs();
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore eliminazione', 'error');
                     }
                 };
                 
@@ -5766,11 +5943,11 @@
                 };
                 
                 const applyHostRetention = async () => {
-                    if (!confirm('Applicare retention policy? Verranno mantenuti solo gli ultimi 7 backup.')) return;
+                    showHostRetentionModal.value = false;
                     
                     try {
                         const resp = await axios.post(`${API}/host-backup/nodes/${hostBackup.value.selectedNodeId}/backups/retention`, {
-                            keep_last: 7
+                            keep_last: hostRetentionCount.value
                         }, {
                             params: { backup_path: hostBackup.value.destPath }
                         });
@@ -7443,7 +7620,10 @@
                     expandedBackupGroups, groupedRestoreBackups, toggleBackupGroup,
                     browseRestorePbs, startRestore, loadRestoreStorages, executeRestore,
                     // Host Config Backup
-                    hostBackup, loadHostBackupData, loadHostBackupPaths, loadHostBackups, createHostBackup, deleteHostBackup, applyHostRetention,
+                    hostBackup, hostBackupJobs, hostBackupJob, showHostRetentionModal, hostRetentionCount,
+                    loadHostBackupData, loadHostBackupJobs, loadHostBackupPaths, loadHostBackups, 
+                    createHostBackupJob, runHostBackupJob, editHostBackupJob, deleteHostBackupJob,
+                    createHostBackup, deleteHostBackup, applyHostRetention,
                     settings, authSettings, notifSettings,
                     showNodeModal, showEditNodeModal, editingNode, showSyncJobModal, editingSyncJobId, showUserModal, editingUser, showInfoModal,
                     // SSH Keys

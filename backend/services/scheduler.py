@@ -10,10 +10,11 @@ import logging
 from croniter import croniter
 from sqlalchemy.orm import Session
 
-from database import SessionLocal, SyncJob, JobLog, Node, NotificationConfig, SystemConfig
+from database import SessionLocal, SyncJob, JobLog, Node, NotificationConfig, SystemConfig, HostBackupJob
 from services.syncoid_service import syncoid_service
 from services.proxmox_service import proxmox_service
 from services.notification_service import notification_service
+from services.host_backup_service import host_backup_service
 
 logger = logging.getLogger(__name__)
 
@@ -129,36 +130,58 @@ class SchedulerService:
         """Verifica e esegue i job schedulati"""
         db = SessionLocal()
         try:
-            # Ottieni job attivi con schedule
-            jobs = db.query(SyncJob).filter(
+            now = datetime.utcnow()
+            
+            # === SYNC JOBS ===
+            sync_jobs = db.query(SyncJob).filter(
                 SyncJob.is_active == True,
                 SyncJob.schedule.isnot(None),
                 SyncJob.schedule != ""
             ).all()
             
-            now = datetime.utcnow()
-            
-            for job in jobs:
+            for job in sync_jobs:
                 try:
-                    # Calcola prossima esecuzione
-                    if job.id not in self._jobs:
-                        # Prima volta, calcola dalla schedule
+                    job_key = f"sync_{job.id}"
+                    if job_key not in self._jobs:
                         cron = croniter(job.schedule, job.last_run or now)
-                        self._jobs[job.id] = cron.get_next(datetime)
+                        self._jobs[job_key] = cron.get_next(datetime)
                     
-                    next_run = self._jobs[job.id]
+                    next_run = self._jobs[job_key]
                     
                     if now >= next_run:
-                        # Tempo di eseguire
-                        logger.info(f"Esecuzione job schedulato: {job.name} (ID: {job.id})")
+                        logger.info(f"Esecuzione SyncJob schedulato: {job.name} (ID: {job.id})")
                         asyncio.create_task(self._execute_job(job.id))
-                        
-                        # Calcola prossima esecuzione
                         cron = croniter(job.schedule, now)
-                        self._jobs[job.id] = cron.get_next(datetime)
+                        self._jobs[job_key] = cron.get_next(datetime)
                         
                 except Exception as e:
-                    logger.error(f"Errore scheduling job {job.id}: {e}")
+                    logger.error(f"Errore scheduling SyncJob {job.id}: {e}")
+            
+            # === HOST BACKUP JOBS ===
+            host_backup_jobs = db.query(HostBackupJob).filter(
+                HostBackupJob.is_active == True,
+                HostBackupJob.schedule.isnot(None),
+                HostBackupJob.schedule != ""
+            ).all()
+            
+            for job in host_backup_jobs:
+                try:
+                    job_key = f"host_backup_{job.id}"
+                    if job_key not in self._jobs:
+                        cron = croniter(job.schedule, job.last_run or now)
+                        self._jobs[job_key] = cron.get_next(datetime)
+                    
+                    next_run = self._jobs[job_key]
+                    
+                    if now >= next_run:
+                        logger.info(f"Esecuzione HostBackupJob schedulato: {job.name} (ID: {job.id})")
+                        asyncio.create_task(self._execute_host_backup_job(job.id))
+                        cron = croniter(job.schedule, now)
+                        self._jobs[job_key] = cron.get_next(datetime)
+                        
+                except Exception as e:
+                    logger.error(f"Errore scheduling HostBackupJob {job.id}: {e}")
+                    
         finally:
             db.close()
     
@@ -267,6 +290,134 @@ class SchedulerService:
             
         except Exception as e:
             logger.error(f"Errore esecuzione job {job_id}: {e}")
+            if log_entry:
+                log_entry.status = "failed"
+                log_entry.error = str(e)
+                log_entry.completed_at = datetime.utcnow()
+                db.commit()
+        finally:
+            db.close()
+    
+    async def _execute_host_backup_job(self, job_id: int):
+        """Esegue un job di host backup schedulato"""
+        db = SessionLocal()
+        log_entry = None
+        
+        try:
+            job = db.query(HostBackupJob).filter(HostBackupJob.id == job_id).first()
+            if not job:
+                logger.error(f"HostBackupJob {job_id} non trovato")
+                return
+            
+            node = db.query(Node).filter(Node.id == job.node_id).first()
+            if not node:
+                logger.error(f"Nodo non trovato per HostBackupJob {job_id}")
+                return
+            
+            # Rileva tipo host
+            host_type = await host_backup_service.detect_host_type(
+                hostname=node.hostname,
+                port=node.ssh_port,
+                username=node.ssh_user,
+                key_path=node.ssh_key_path
+            )
+            
+            # Crea log entry
+            log_entry = JobLog(
+                job_type="host_backup",
+                job_id=job_id,
+                node_name=node.name,
+                dataset=f"config-{host_type}",
+                status="running",
+                message=f"Backup schedulato configurazione {host_type.upper()} su {node.name}"
+            )
+            db.add(log_entry)
+            
+            job.current_status = "running"
+            job.run_count += 1
+            db.commit()
+            
+            start_time = datetime.utcnow()
+            
+            # Esegui backup
+            result = await host_backup_service.create_host_backup(
+                hostname=node.hostname,
+                host_type=host_type,
+                port=node.ssh_port,
+                username=node.ssh_user,
+                key_path=node.ssh_key_path,
+                dest_path=job.dest_path,
+                compress=job.compress,
+                encrypt=job.encrypt,
+                encrypt_password=job.encrypt_password
+            )
+            
+            end_time = datetime.utcnow()
+            duration = int((end_time - start_time).total_seconds())
+            
+            if result['success']:
+                # Applica retention
+                await host_backup_service.apply_retention(
+                    hostname=node.hostname,
+                    port=node.ssh_port,
+                    username=node.ssh_user,
+                    key_path=node.ssh_key_path,
+                    backup_path=job.dest_path,
+                    keep_last=job.keep_last
+                )
+                
+                job.current_status = "completed"
+                job.last_status = "success"
+                job.last_backup_time = end_time
+                job.last_backup_file = result.get('backup_file')
+                job.last_backup_size = result.get('size', 0)
+                job.last_run = end_time
+                job.last_duration = duration
+                job.last_error = None
+                
+                log_entry.status = "success"
+                log_entry.message = f"Backup {host_type.upper()} completato: {result['backup_name']} ({result['size_human']})"
+                log_entry.completed_at = end_time
+                log_entry.duration = duration
+                
+                logger.info(f"HostBackupJob {job_id} completato: {result['backup_name']}")
+            else:
+                job.current_status = "failed"
+                job.last_status = "failed"
+                job.last_run = end_time
+                job.last_duration = duration
+                job.last_error = result.get('error')
+                job.error_count += 1
+                
+                log_entry.status = "failed"
+                log_entry.error = result.get('error')
+                log_entry.message = f"Backup {host_type.upper()} fallito"
+                log_entry.completed_at = end_time
+                log_entry.duration = duration
+                
+                logger.error(f"HostBackupJob {job_id} fallito: {result.get('error')}")
+            
+            db.commit()
+            
+            # Invia notifica se configurato
+            if job.notify_mode == 'always' or (job.notify_mode == 'failure' and job.last_status == 'failed'):
+                try:
+                    await notification_service.send_job_notification(
+                        job_name=job.name,
+                        status=job.last_status,
+                        source=node.name,
+                        destination=job.dest_path,
+                        duration=duration,
+                        error=job.last_error if job.last_status == 'failed' else None,
+                        details=f"File: {result.get('backup_name', 'N/A')}, Size: {result.get('size_human', 'N/A')}",
+                        job_id=job_id,
+                        is_scheduled=True
+                    )
+                except Exception as notify_err:
+                    logger.warning(f"Errore invio notifica per HostBackupJob {job_id}: {notify_err}")
+            
+        except Exception as e:
+            logger.error(f"Errore esecuzione HostBackupJob {job_id}: {e}")
             if log_entry:
                 log_entry.status = "failed"
                 log_entry.error = str(e)

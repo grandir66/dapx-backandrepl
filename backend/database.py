@@ -549,6 +549,58 @@ class BackupJob(Base):
     pbs_node = relationship("Node", foreign_keys=[pbs_node_id], back_populates="backup_jobs_pbs")
 
 
+class HostBackupJob(Base):
+    """
+    Job di backup configurazione host Proxmox (PVE/PBS).
+    Salva i file di configurazione del sistema per disaster recovery.
+    """
+    __tablename__ = "host_backup_jobs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    
+    # Nodo da backuppare
+    node_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)
+    
+    # Opzioni backup
+    dest_path = Column(String(500), default="/var/backups/proxmox-config")
+    compress = Column(Boolean, default=True)
+    encrypt = Column(Boolean, default=False)
+    encrypt_password = Column(String(500), nullable=True)  # Password per cifratura AES
+    
+    # Retention policy
+    keep_last = Column(Integer, default=7)
+    
+    # Scheduling
+    schedule = Column(String(100), nullable=True)  # Cron format
+    is_active = Column(Boolean, default=True)
+    
+    # Notifiche
+    notify_mode = Column(String(20), default="daily")  # daily, always, failure, never
+    notify_subject = Column(String(200), nullable=True)
+    
+    # Stato corrente
+    current_status = Column(String(20), default="pending")
+    last_backup_time = Column(DateTime, nullable=True)
+    last_backup_file = Column(String(500), nullable=True)
+    last_backup_size = Column(BigInteger, nullable=True)
+    
+    # Stats
+    last_run = Column(DateTime, nullable=True)
+    last_status = Column(String(50), nullable=True)
+    last_duration = Column(Integer, nullable=True)  # secondi
+    last_error = Column(Text, nullable=True)
+    run_count = Column(Integer, default=0)
+    error_count = Column(Integer, default=0)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
+    # Relationships
+    node = relationship("Node", foreign_keys=[node_id])
+
+
 class JobLog(Base):
     """Log delle esecuzioni"""
     __tablename__ = "job_logs"
