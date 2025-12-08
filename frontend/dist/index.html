@@ -7006,7 +7006,30 @@
                 };
                 
                 const runSyncJob = async (job) => {
-                    try { await axios.post(`${API}/sync-jobs/${job.id}/run`); showToast('Job avviato'); await loadSyncJobs(); } catch (e) { showToast('Errore', 'error'); }
+                    try { 
+                        await axios.post(`${API}/sync-jobs/${job.id}/run`); 
+                        showToast('Job avviato in background...', 'info'); 
+                        await loadSyncJobs();
+                        // Poll per aggiornamenti ogni 3 secondi per 2 minuti
+                        let pollCount = 0;
+                        const pollInterval = setInterval(async () => {
+                            pollCount++;
+                            await loadSyncJobs();
+                            // Trova il job e verifica se è completato
+                            const updatedJob = syncJobs.value.find(j => j.id === job.id);
+                            if (updatedJob && updatedJob.last_status !== 'running') {
+                                clearInterval(pollInterval);
+                                if (updatedJob.last_status === 'success') {
+                                    showToast(`✅ Job ${job.name} completato!`, 'success');
+                                } else if (updatedJob.last_status === 'failed') {
+                                    showToast(`❌ Job ${job.name} fallito`, 'error');
+                                }
+                            }
+                            if (pollCount >= 40) { // 40 * 3s = 2 minuti
+                                clearInterval(pollInterval);
+                            }
+                        }, 3000);
+                    } catch (e) { showToast('Errore avvio job', 'error'); }
                 };
                 
                 const toggleSyncJob = async (job) => {
