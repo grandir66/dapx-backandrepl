@@ -2381,6 +2381,7 @@
                                         <td>{{ job.last_run ? formatDate(job.last_run) : '-' }}</td>
                                         <td>
                                             <button class="btn btn-primary btn-sm" @click="runSyncJob(job)" :disabled="loading" title="Esegui" style="padding: 2px 6px;">▶</button>
+                                            <button class="btn btn-secondary btn-sm" @click="viewJobSnapshots(job)" :disabled="loading" title="Versioni" style="padding: 2px 6px;">📸</button>
                                             <button class="btn btn-secondary btn-sm" @click="editSyncJob(job)" :disabled="loading" title="Modifica" style="padding: 2px 6px;">✏️</button>
                                         </td>
                                     </tr>
@@ -2403,6 +2404,7 @@
                                         <td><span class="badge" :class="getStatusClass(job.last_status)">{{ job.last_status || 'N/A' }}</span></td>
                                         <td>
                                             <button class="btn btn-primary btn-sm" @click="runSyncJob(job)" :disabled="loading" title="Esegui">▶</button>
+                                            <button class="btn btn-secondary btn-sm" @click="viewJobSnapshots(job)" :disabled="loading" title="Versioni">📸</button>
                                             <button class="btn btn-secondary btn-sm" @click="editSyncJob(job)" :disabled="loading" title="Modifica">✏️</button>
                                             <button class="btn btn-danger btn-sm" @click="deleteSyncJob(job)" :disabled="loading" title="Elimina">✕</button>
                                         </td>
@@ -4898,6 +4900,114 @@
             </div>
         </div>
         
+        <!-- Snapshot Management Modal -->
+        <div class="modal-overlay" v-if="isAuthenticated && showSnapshotModal" @click.self="showSnapshotModal = false">
+            <div class="modal" style="max-width: 800px;">
+                <div class="modal-header">
+                    <h3 class="modal-title">📸 Versioni Disponibili - {{ snapshotJob?.name }}</h3>
+                    <button class="btn btn-icon" @click="showSnapshotModal = false">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div v-if="snapshotLoading" style="text-align: center; padding: 40px;">
+                        <div class="spinner"></div>
+                        <p style="margin-top: 16px; color: var(--text-secondary);">Caricamento snapshot...</p>
+                    </div>
+                    
+                    <div v-else-if="jobSnapshots.length === 0" style="text-align: center; padding: 40px; color: var(--text-secondary);">
+                        <div style="font-size: 3rem; margin-bottom: 16px;">📭</div>
+                        <p>Nessuna snapshot trovata sul dataset destinazione.</p>
+                        <p style="font-size: 0.9rem;">Le snapshot vengono create automaticamente durante la replica.</p>
+                    </div>
+                    
+                    <div v-else>
+                        <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+                            <strong>Dataset:</strong> {{ snapshotJob?.dest_dataset }}<br>
+                            <strong>Snapshot disponibili:</strong> {{ jobSnapshots.length }}
+                            <span v-if="snapshotJob?.keep_snapshots > 0" style="color: var(--accent-info);">
+                                (retention: {{ snapshotJob.keep_snapshots }})
+                            </span>
+                        </div>
+                        
+                        <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Snapshot</th>
+                                        <th>Data</th>
+                                        <th>Usato</th>
+                                        <th>Azioni</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="snap in jobSnapshots" :key="snap.name">
+                                        <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
+                                            {{ snap.snapshot_name }}
+                                        </td>
+                                        <td>{{ formatDate(snap.creation) }}</td>
+                                        <td>{{ snap.used || '-' }}</td>
+                                        <td>
+                                            <button class="btn btn-primary btn-sm" @click="rollbackSnapshot(snap)" :disabled="loading" title="Ripristina">
+                                                ⏪ Rollback
+                                            </button>
+                                            <button class="btn btn-secondary btn-sm" @click="cloneSyncJobSnapshot(snap)" :disabled="loading" title="Clona">
+                                                📋 Clone
+                                            </button>
+                                            <button class="btn btn-danger btn-sm" @click="deleteSnapshot(snap)" :disabled="loading" title="Elimina">
+                                                🗑️
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div style="margin-top: 16px; padding: 12px; background: rgba(255, 193, 7, 0.1); border-radius: 8px; border: 1px solid var(--accent-warning);">
+                            <strong style="color: var(--accent-warning);">⚠️ Attenzione:</strong>
+                            <ul style="margin: 8px 0 0 20px; color: var(--text-secondary);">
+                                <li><strong>Rollback</strong>: Ripristina il dataset allo stato della snapshot. Le modifiche successive verranno perse!</li>
+                                <li><strong>Clone</strong>: Crea una copia del dataset allo stato della snapshot (non distruttivo).</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showSnapshotModal = false">Chiudi</button>
+                    <button class="btn btn-primary" @click="loadJobSnapshots(snapshotJob)" :disabled="snapshotLoading">
+                        🔄 Aggiorna
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Clone Snapshot Modal -->
+        <div class="modal-overlay" v-if="showCloneModal" @click.self="showCloneModal = false">
+            <div class="modal" style="max-width: 500px;">
+                <div class="modal-header">
+                    <h3 class="modal-title">📋 Clona Snapshot</h3>
+                    <button class="btn btn-icon" @click="showCloneModal = false">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p style="margin-bottom: 16px;">
+                        Clona la snapshot <strong>{{ cloneSourceSnap?.snapshot_name }}</strong> in un nuovo dataset.
+                    </p>
+                    <div class="form-group">
+                        <label class="form-label">Nome del clone</label>
+                        <input type="text" class="form-input" v-model="cloneName" placeholder="es: vm-100-recovery">
+                        <small style="color: var(--text-secondary);">
+                            Il clone verrà creato in: {{ snapshotJob?.dest_dataset?.split('/')[0] }}/{{ cloneName || '...' }}
+                        </small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showCloneModal = false">Annulla</button>
+                    <button class="btn btn-primary" @click="confirmClone" :disabled="!cloneName || loading">
+                        <span v-if="loading" class="spinner"></span>
+                        <span v-else>Crea Clone</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
         <div class="modal-overlay" v-if="isAuthenticated && showUserModal" @click.self="showUserModal = false">
             <div class="modal">
                 <div class="modal-header">
@@ -5176,6 +5286,16 @@
                 const editingNode = ref(null);
                 const showSyncJobModal = ref(false);
                 const editingSyncJobId = ref(null);
+                
+                // Snapshot management
+                const showSnapshotModal = ref(false);
+                const snapshotJob = ref(null);
+                const jobSnapshots = ref([]);
+                const snapshotLoading = ref(false);
+                const showCloneModal = ref(false);
+                const cloneSourceSnap = ref(null);
+                const cloneName = ref('');
+                
                 const showUserModal = ref(false);
                 const showInfoModal = ref(false);
                 const editingUser = ref(null);
@@ -7114,6 +7234,75 @@
                     try { await axios.delete(`${API}/sync-jobs/${job.id}`); showToast('Eliminato'); await loadSyncJobs(); } catch (e) {}
                 };
                 
+                // ============== Snapshot Management ==============
+                const viewJobSnapshots = async (job) => {
+                    snapshotJob.value = job;
+                    showSnapshotModal.value = true;
+                    await loadJobSnapshots(job);
+                };
+                
+                const loadJobSnapshots = async (job) => {
+                    snapshotLoading.value = true;
+                    try {
+                        const res = await axios.get(`${API}/sync-jobs/${job.id}/snapshots`);
+                        jobSnapshots.value = res.data;
+                    } catch (e) {
+                        showToast('Errore caricamento snapshot', 'error');
+                        jobSnapshots.value = [];
+                    }
+                    snapshotLoading.value = false;
+                };
+                
+                const rollbackSnapshot = async (snap) => {
+                    if (!confirm(`⚠️ ATTENZIONE!\n\nVuoi ripristinare il dataset a:\n${snap.snapshot_name}\n\nTutti i dati successivi a questa snapshot verranno PERSI!\n\nContinuare?`)) return;
+                    
+                    loading.value = true;
+                    try {
+                        await axios.post(`${API}/sync-jobs/${snapshotJob.value.id}/snapshots/${snap.snapshot_name}/rollback`);
+                        showToast(`✅ Rollback completato a ${snap.snapshot_name}`, 'success');
+                        await loadJobSnapshots(snapshotJob.value);
+                    } catch (e) {
+                        showToast('Errore rollback: ' + (e.response?.data?.detail || e.message), 'error');
+                    }
+                    loading.value = false;
+                };
+                
+                const cloneSyncJobSnapshot = (snap) => {
+                    cloneSourceSnap.value = snap;
+                    cloneName.value = `${snapshotJob.value.dest_dataset.split('/').pop()}-recovery-${new Date().toISOString().slice(0,10)}`;
+                    showCloneModal.value = true;
+                };
+                
+                const confirmClone = async () => {
+                    if (!cloneName.value) return;
+                    
+                    loading.value = true;
+                    try {
+                        const res = await axios.post(
+                            `${API}/sync-jobs/${snapshotJob.value.id}/snapshots/${cloneSourceSnap.value.snapshot_name}/clone?clone_name=${encodeURIComponent(cloneName.value)}`
+                        );
+                        showToast(`✅ Clone creato: ${res.data.clone_dataset}`, 'success');
+                        showCloneModal.value = false;
+                    } catch (e) {
+                        showToast('Errore clone: ' + (e.response?.data?.detail || e.message), 'error');
+                    }
+                    loading.value = false;
+                };
+                
+                const deleteSnapshot = async (snap) => {
+                    if (!confirm(`Eliminare la snapshot ${snap.snapshot_name}?`)) return;
+                    
+                    loading.value = true;
+                    try {
+                        await axios.delete(`${API}/sync-jobs/${snapshotJob.value.id}/snapshots/${snap.snapshot_name}`);
+                        showToast('Snapshot eliminata', 'success');
+                        await loadJobSnapshots(snapshotJob.value);
+                    } catch (e) {
+                        showToast('Errore eliminazione: ' + (e.response?.data?.detail || e.message), 'error');
+                    }
+                    loading.value = false;
+                };
+                
                 const getVmDatasets = async (vm) => {
                     try {
                         const res = await axios.get(`${API}/vms/node/${selectedVmNodeId.value}/vm/${vm.vmid}/datasets?vm_type=${vm.type}`);
@@ -7723,6 +7912,10 @@
                     createNode, editNode, saveNode, testNode, installSanoid, deleteNode, refreshNodeDatasets,
                     updateDatasetConfig, applySanoidConfig,
                     createSyncJob, runSyncJob, toggleSyncJob, deleteSyncJob, editSyncJob, registerJobVM,
+                    // Sync Job Snapshot management
+                    viewJobSnapshots, loadJobSnapshots, rollbackSnapshot, deleteSnapshot, cloneSyncJobSnapshot,
+                    showSnapshotModal, snapshotJob, jobSnapshots, snapshotLoading,
+                    showCloneModal, cloneSourceSnap, cloneName, confirmClone,
                     getVmDatasets,
                     editUser, saveUser, deleteUser,
                     saveSettings, saveAuthSettings, saveNotifSettings, testEmailNotification,

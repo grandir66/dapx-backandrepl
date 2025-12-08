@@ -1212,3 +1212,281 @@ async def get_sync_stats(
         "failed_24h": failed_count,
         "success_rate": round(success_count / len(recent_logs) * 100, 1) if recent_logs else 0
     }
+
+
+# ============== Snapshot Management ==============
+
+class SnapshotInfo(BaseModel):
+    """Info su una snapshot"""
+    name: str  # Nome completo (dataset@snapshot)
+    snapshot_name: str  # Solo nome snapshot
+    creation: datetime
+    used: Optional[str] = None  # Spazio usato
+    referenced: Optional[str] = None  # Spazio referenziato
+
+
+@router.get("/{job_id}/snapshots", response_model=List[SnapshotInfo])
+async def list_job_snapshots(
+    job_id: int,
+    user: User = Depends(require_viewer),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista le snapshot disponibili sul dataset destinazione di un job.
+    Utile per vedere le versioni disponibili per il recovery.
+    """
+    from services.ssh_service import ssh_service
+    
+    job = db.query(SyncJob).filter(SyncJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job non trovato")
+    
+    if not check_job_access(user, job, db):
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    
+    dest_node = db.query(Node).filter(Node.id == job.dest_node_id).first()
+    if not dest_node:
+        raise HTTPException(status_code=404, detail="Nodo destinazione non trovato")
+    
+    # Lista snapshot sul dataset destinazione
+    cmd = f"zfs list -t snapshot -o name,creation,used,referenced -s creation -H {job.dest_dataset} 2>/dev/null || true"
+    
+    result = await ssh_service.execute(
+        hostname=dest_node.hostname,
+        command=cmd,
+        port=dest_node.ssh_port,
+        username=dest_node.ssh_user,
+        key_path=dest_node.ssh_key_path,
+        timeout=60
+    )
+    
+    snapshots = []
+    if result.success and result.stdout.strip():
+        for line in result.stdout.strip().split('\n'):
+            if not line.strip():
+                continue
+            parts = line.split('\t')
+            if len(parts) >= 2:
+                full_name = parts[0].strip()
+                if '@' in full_name:
+                    snap_name = full_name.split('@')[1]
+                    # Parse creation date (format: Mon Dec  8 10:30 2025)
+                    try:
+                        from dateutil import parser
+                        creation_str = parts[1].strip() if len(parts) > 1 else ""
+                        creation = parser.parse(creation_str) if creation_str else datetime.utcnow()
+                    except:
+                        creation = datetime.utcnow()
+                    
+                    snapshots.append(SnapshotInfo(
+                        name=full_name,
+                        snapshot_name=snap_name,
+                        creation=creation,
+                        used=parts[2].strip() if len(parts) > 2 else None,
+                        referenced=parts[3].strip() if len(parts) > 3 else None
+                    ))
+    
+    # Ordina per data decrescente (più recente prima)
+    snapshots.sort(key=lambda x: x.creation, reverse=True)
+    
+    return snapshots
+
+
+@router.post("/{job_id}/snapshots/{snapshot_name}/rollback")
+async def rollback_to_snapshot(
+    job_id: int,
+    snapshot_name: str,
+    request: Request,
+    user: User = Depends(require_operator),
+    db: Session = Depends(get_db)
+):
+    """
+    Esegue rollback del dataset destinazione a una snapshot specifica.
+    ATTENZIONE: Questo elimina tutti i dati successivi alla snapshot!
+    """
+    from services.ssh_service import ssh_service
+    
+    job = db.query(SyncJob).filter(SyncJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job non trovato")
+    
+    if not check_job_access(user, job, db):
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    
+    dest_node = db.query(Node).filter(Node.id == job.dest_node_id).first()
+    if not dest_node:
+        raise HTTPException(status_code=404, detail="Nodo destinazione non trovato")
+    
+    # Verifica che la snapshot esista
+    full_snapshot = f"{job.dest_dataset}@{snapshot_name}"
+    check_cmd = f"zfs list -t snapshot {full_snapshot} 2>/dev/null && echo 'EXISTS'"
+    
+    check_result = await ssh_service.execute(
+        hostname=dest_node.hostname,
+        command=check_cmd,
+        port=dest_node.ssh_port,
+        username=dest_node.ssh_user,
+        key_path=dest_node.ssh_key_path,
+        timeout=30
+    )
+    
+    if "EXISTS" not in check_result.stdout:
+        raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_name} non trovata")
+    
+    # Esegui rollback (con -r per eliminare snapshot più recenti)
+    rollback_cmd = f"zfs rollback -r {full_snapshot}"
+    
+    result = await ssh_service.execute(
+        hostname=dest_node.hostname,
+        command=rollback_cmd,
+        port=dest_node.ssh_port,
+        username=dest_node.ssh_user,
+        key_path=dest_node.ssh_key_path,
+        timeout=300
+    )
+    
+    if result.success:
+        log_audit(
+            db, user.id, "snapshot_rollback", "sync_job",
+            resource_id=job_id,
+            details=f"Rollback a {snapshot_name} su {dest_node.name}:{job.dest_dataset}",
+            ip_address=request.client.host if request.client else None
+        )
+        return {
+            "success": True,
+            "message": f"Rollback completato a {snapshot_name}",
+            "snapshot": full_snapshot
+        }
+    else:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Errore rollback: {result.stderr or result.stdout}"
+        )
+
+
+@router.post("/{job_id}/snapshots/{snapshot_name}/clone")
+async def clone_snapshot(
+    job_id: int,
+    snapshot_name: str,
+    clone_name: str,  # Query param per il nome del clone
+    request: Request,
+    user: User = Depends(require_operator),
+    db: Session = Depends(get_db)
+):
+    """
+    Clona una snapshot in un nuovo dataset.
+    Utile per recuperare dati senza modificare il dataset originale.
+    """
+    from services.ssh_service import ssh_service
+    
+    job = db.query(SyncJob).filter(SyncJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job non trovato")
+    
+    if not check_job_access(user, job, db):
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    
+    dest_node = db.query(Node).filter(Node.id == job.dest_node_id).first()
+    if not dest_node:
+        raise HTTPException(status_code=404, detail="Nodo destinazione non trovato")
+    
+    # Costruisci path del clone (stesso pool del dataset originale)
+    pool = job.dest_dataset.split('/')[0]
+    clone_dataset = f"{pool}/{clone_name}"
+    full_snapshot = f"{job.dest_dataset}@{snapshot_name}"
+    
+    # Verifica che il clone non esista già
+    check_cmd = f"zfs list {clone_dataset} 2>/dev/null && echo 'EXISTS'"
+    check_result = await ssh_service.execute(
+        hostname=dest_node.hostname,
+        command=check_cmd,
+        port=dest_node.ssh_port,
+        username=dest_node.ssh_user,
+        key_path=dest_node.ssh_key_path,
+        timeout=30
+    )
+    
+    if "EXISTS" in check_result.stdout:
+        raise HTTPException(status_code=400, detail=f"Dataset {clone_dataset} esiste già")
+    
+    # Crea clone
+    clone_cmd = f"zfs clone {full_snapshot} {clone_dataset}"
+    
+    result = await ssh_service.execute(
+        hostname=dest_node.hostname,
+        command=clone_cmd,
+        port=dest_node.ssh_port,
+        username=dest_node.ssh_user,
+        key_path=dest_node.ssh_key_path,
+        timeout=120
+    )
+    
+    if result.success:
+        log_audit(
+            db, user.id, "snapshot_clone", "sync_job",
+            resource_id=job_id,
+            details=f"Clonata {snapshot_name} in {clone_dataset} su {dest_node.name}",
+            ip_address=request.client.host if request.client else None
+        )
+        return {
+            "success": True,
+            "message": f"Clone creato: {clone_dataset}",
+            "clone_dataset": clone_dataset,
+            "source_snapshot": full_snapshot
+        }
+    else:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Errore clone: {result.stderr or result.stdout}"
+        )
+
+
+@router.delete("/{job_id}/snapshots/{snapshot_name}")
+async def delete_snapshot(
+    job_id: int,
+    snapshot_name: str,
+    request: Request,
+    user: User = Depends(require_operator),
+    db: Session = Depends(get_db)
+):
+    """Elimina una snapshot specifica dal dataset destinazione."""
+    from services.ssh_service import ssh_service
+    
+    job = db.query(SyncJob).filter(SyncJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job non trovato")
+    
+    if not check_job_access(user, job, db):
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    
+    dest_node = db.query(Node).filter(Node.id == job.dest_node_id).first()
+    if not dest_node:
+        raise HTTPException(status_code=404, detail="Nodo destinazione non trovato")
+    
+    full_snapshot = f"{job.dest_dataset}@{snapshot_name}"
+    
+    # Elimina snapshot
+    del_cmd = f"zfs destroy {full_snapshot}"
+    
+    result = await ssh_service.execute(
+        hostname=dest_node.hostname,
+        command=del_cmd,
+        port=dest_node.ssh_port,
+        username=dest_node.ssh_user,
+        key_path=dest_node.ssh_key_path,
+        timeout=120
+    )
+    
+    if result.success:
+        log_audit(
+            db, user.id, "snapshot_delete", "sync_job",
+            resource_id=job_id,
+            details=f"Eliminata snapshot {snapshot_name} da {dest_node.name}:{job.dest_dataset}",
+            ip_address=request.client.host if request.client else None
+        )
+        return {"success": True, "message": f"Snapshot {snapshot_name} eliminata"}
+    else:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Errore eliminazione: {result.stderr or result.stdout}"
+        )
