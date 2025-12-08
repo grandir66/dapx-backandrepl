@@ -712,6 +712,8 @@ async def get_vm_all_snapshots(
     from routers.vms import get_vm_datasets
     datasets_resp = await get_vm_datasets(node_id, vm_id, vm_type, user, db)
     
+    logger.info(f"VM {vm_id} on node {node_id}: datasets_resp={datasets_resp}")
+    
     sanoid_snapshots = []
     syncoid_snapshots = []
     backup_snapshots = []
@@ -719,6 +721,7 @@ async def get_vm_all_snapshots(
     seen_snapshots = set()  # Per evitare duplicati
     
     if datasets_resp and datasets_resp.datasets:
+        logger.info(f"Found datasets for VM {vm_id}: {datasets_resp.datasets}")
         for dataset in datasets_resp.datasets:
             datasets_to_check.add((dataset, node_id))  # (dataset, node_id)
             

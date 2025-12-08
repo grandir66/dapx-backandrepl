@@ -258,13 +258,15 @@ class ProxmoxService:
         if not success:
             return []
         
-        # Cerca pattern disco (es: scsi0: local-zfs:vm-100-disk-0)
+        # Cerca pattern disco (es: scsi0: local-zfs:vm-100-disk-0,size=10241M)
         disk_pattern = r'(?:scsi|sata|virtio|ide|mp)\d+:\s*(\S+):(\S+)'
         disks = re.findall(disk_pattern, config)
         
         datasets = []
         
-        for storage, disk_name in disks:
+        for storage, disk_name_raw in disks:
+            # Rimuovi parametri extra dopo la virgola (es: ,size=10241M)
+            disk_name = disk_name_raw.split(',')[0]
             dataset_found = False
             
             # Trova il path ZFS dello storage
