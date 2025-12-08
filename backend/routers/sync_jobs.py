@@ -166,29 +166,6 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                     else:
                         log_entry.message = f"Attenzione: impossibile creare {dest_parent}: {create_result.stderr}"
             
-            # Se retention configurata, crea snapshot manuale prima del sync
-            use_retention = job.keep_snapshots and job.keep_snapshots > 0
-            retention_snap_name = None
-            
-            if use_retention:
-                # Crea snapshot manuale con timestamp univoco su sorgente
-                timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H:%M:%S")
-                retention_snap_name = f"backup_{timestamp}"
-                full_snap = f"{job.source_dataset}@{retention_snap_name}"
-                
-                create_snap_cmd = f"zfs snapshot {full_snap}"
-                snap_result = await ssh_service.execute(
-                    hostname=source_node.hostname,
-                    command=create_snap_cmd,
-                    port=source_node.ssh_port,
-                    username=source_node.ssh_user,
-                    key_path=source_node.ssh_key_path,
-                    timeout=60
-                )
-                
-                if not snap_result.success:
-                    logger.warning(f"Errore creazione snapshot retention: {snap_result.stderr}")
-            
             # Esegui sync ZFS
             result = await syncoid_service.run_sync(
                 executor_host=source_node.hostname,
@@ -210,9 +187,29 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                 extra_args=job.extra_args or ""
             )
             
-            # Dopo sync riuscito, applica retention sulle snapshot backup_* 
+            # Se retention configurata, crea snapshot backup_* sulla destinazione DOPO il sync
+            use_retention = job.keep_snapshots and job.keep_snapshots > 0
+            
             if use_retention and result["success"]:
-                # Lista snapshot backup_* sulla destinazione
+                # Crea snapshot backup_* sulla destinazione (non tocca le snapshot syncoid_*)
+                timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H:%M:%S")
+                backup_snap_name = f"backup_{timestamp}"
+                backup_snap = f"{job.dest_dataset}@{backup_snap_name}"
+                
+                create_snap_cmd = f"zfs snapshot {backup_snap}"
+                snap_result = await ssh_service.execute(
+                    hostname=dest_node.hostname,
+                    command=create_snap_cmd,
+                    port=dest_node.ssh_port,
+                    username=dest_node.ssh_user,
+                    key_path=dest_node.ssh_key_path,
+                    timeout=60
+                )
+                
+                if not snap_result.success:
+                    logger.warning(f"Errore creazione snapshot retention: {snap_result.stderr}")
+                
+                # Lista snapshot backup_* sulla destinazione e applica retention
                 list_cmd = f"zfs list -t snapshot -o name -s creation -H {job.dest_dataset} 2>/dev/null | grep '@backup_' || true"
                 list_result = await ssh_service.execute(
                     hostname=dest_node.hostname,
