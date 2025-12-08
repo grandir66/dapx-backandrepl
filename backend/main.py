@@ -15,7 +15,7 @@ import logging
 
 from database import engine, Base, get_db, init_default_config, SessionLocal
 from routers import nodes, snapshots, sync_jobs, vms, logs, settings, auth, ssh_keys
-from routers import recovery_jobs, backup_jobs, host_info, host_backup, migration_jobs
+from routers import recovery_jobs, backup_jobs, host_info, host_backup, migration_jobs, updates
 from services.scheduler import SchedulerService
 
 # Configurazione logging
@@ -102,6 +102,7 @@ app.include_router(ssh_keys.router, prefix="/api", tags=["SSH Keys"])
 app.include_router(host_info.router, prefix="/api", tags=["Host Info & Dashboard"])
 app.include_router(host_backup.router, prefix="/api/host-backup", tags=["Host Config Backup"])
 app.include_router(migration_jobs.router, prefix="/api/migration-jobs", tags=["Migration Jobs"])
+app.include_router(updates.router, tags=["Updates"])
 
 
 # Health check (non richiede autenticazione)

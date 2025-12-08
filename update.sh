@@ -1,377 +1,159 @@
 #!/bin/bash
 #
-# Sanoid Manager - Update Script
-# Scarica e installa aggiornamenti da GitHub
+# DAPX-backandrepl - Script di Aggiornamento
+# Aggiorna installazioni esistenti (standard o container LXC)
 #
 
 set -e
-
-# Configurazione
-GITHUB_REPO="grandir66/sanoid-manager-3.0.0"
-INSTALL_DIR="/opt/sanoid-manager"
-BACKUP_DIR="/opt/sanoid-manager-backup"
-SERVICE_NAME="sanoid-manager"
 
 # Colori
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
 BLUE='\033[0;34m'
 NC='\033[0m'
+BOLD='\033[1m'
 
-log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_success() { echo -e "${GREEN}[✓]${NC} $1"; }
-log_warning() { echo -e "${YELLOW}[!]${NC} $1"; }
-log_error() { echo -e "${RED}[✗]${NC} $1"; }
+log_info() {
+    echo -e "${CYAN}[INFO]${NC} $1"
+}
 
-# Banner
-echo ""
-echo -e "${GREEN}╔════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║     Sanoid Manager - Update Tool           ║${NC}"
-echo -e "${GREEN}╚════════════════════════════════════════════╝${NC}"
-echo ""
+log_success() {
+    echo -e "${GREEN}[✓]${NC} $1"
+}
 
-# Verifica root
-if [[ $EUID -ne 0 ]]; then
-   log_error "Questo script deve essere eseguito come root"
-   exit 1
+log_warning() {
+    echo -e "${YELLOW}[!]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[✗]${NC} $1"
+}
+
+# Configurazione
+GITHUB_REPO="grandir66/dapx-backandrepl"
+GITHUB_BRANCH="main"
+
+# Directory installazione (rileva automaticamente)
+if [ -d "/opt/dapx-backandrepl" ]; then
+    INSTALL_DIR="/opt/dapx-backandrepl"
+elif [ -d "/opt/sanoid-manager" ]; then
+    INSTALL_DIR="/opt/sanoid-manager"
+else
+    INSTALL_DIR="/opt/dapx-backandrepl"
 fi
 
-# Funzione per ottenere versione corrente
-get_current_version() {
-    if [[ -f "$INSTALL_DIR/version.txt" ]]; then
-        cat "$INSTALL_DIR/version.txt"
-    elif [[ -f "$INSTALL_DIR/main.py" ]]; then
-        grep -oP 'version="\K[^"]+' "$INSTALL_DIR/main.py" 2>/dev/null | head -1 || echo "unknown"
-    else
-        echo "not-installed"
-    fi
-}
+# Servizio
+SERVICE_NAME="dapx-backandrepl"
+if ! systemctl list-unit-files | grep -q "${SERVICE_NAME}"; then
+    SERVICE_NAME="sanoid-manager"
+fi
 
-# Funzione per ottenere ultima versione da GitHub
-get_latest_version() {
-    local api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
-    curl -s "$api_url" | grep -oP '"tag_name": "\K[^"]+' | sed 's/^v//' || echo "unknown"
-}
+log_info "════════════════════════════════════════════════"
+log_info "${BOLD}DAPX-backandrepl - Aggiornamento${NC}"
+log_info "════════════════════════════════════════════════"
+echo ""
 
-# Funzione per scaricare release
-download_release() {
-    local version=$1
-    local download_url="https://github.com/${GITHUB_REPO}/releases/download/v${version}/sanoid-manager-${version}.tar.gz"
-    local temp_file="/tmp/sanoid-manager-${version}.tar.gz"
-    
-    log_info "Download versione ${version}..."
-    
-    if curl -L -o "$temp_file" "$download_url" 2>/dev/null; then
-        echo "$temp_file"
-    else
-        # Prova senza 'v' prefix
-        download_url="https://github.com/${GITHUB_REPO}/releases/download/${version}/sanoid-manager-${version}.tar.gz"
-        if curl -L -o "$temp_file" "$download_url" 2>/dev/null; then
-            echo "$temp_file"
-        else
-            echo ""
-        fi
-    fi
-}
+# Verifica permessi root
+if [ "$EUID" -ne 0 ]; then 
+    log_error "Questo script deve essere eseguito come root"
+    exit 1
+fi
 
-# Funzione per backup
-backup_current() {
-    if [[ -d "$INSTALL_DIR" ]]; then
-        log_info "Backup installazione corrente..."
-        rm -rf "$BACKUP_DIR"
-        cp -r "$INSTALL_DIR" "$BACKUP_DIR"
-        # Preserva database e configurazioni
-        log_success "Backup completato in $BACKUP_DIR"
-    fi
-}
+# Rileva tipo installazione
+log_info "Rilevamento installazione..."
+echo "  Directory: ${INSTALL_DIR}"
+echo "  Servizio: ${SERVICE_NAME}"
 
-# Funzione per restore
-restore_backup() {
-    if [[ -d "$BACKUP_DIR" ]]; then
-        log_warning "Ripristino backup..."
-        rm -rf "$INSTALL_DIR"
-        mv "$BACKUP_DIR" "$INSTALL_DIR"
-        log_success "Backup ripristinato"
-    fi
-}
+# Verifica che l'installazione esista
+if [ ! -d "${INSTALL_DIR}" ]; then
+    log_error "Directory installazione non trovata: ${INSTALL_DIR}"
+    log_info "Sei sicuro che il sistema sia installato?"
+    exit 1
+fi
 
-# Funzione per installare aggiornamento
-install_update() {
-    local archive=$1
-    local temp_dir="/tmp/sanoid-manager-update"
-    
-    log_info "Estrazione archivio..."
-    rm -rf "$temp_dir"
-    mkdir -p "$temp_dir"
-    tar -xzf "$archive" -C "$temp_dir"
-    
-    # Trova la directory estratta
-    local extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d -name "sanoid-manager*" | head -1)
-    if [[ -z "$extracted_dir" ]]; then
-        extracted_dir="$temp_dir"
-    fi
-    
-    # Stop servizio
-    log_info "Stop servizio..."
-    systemctl stop "$SERVICE_NAME" 2>/dev/null || true
-    
-    # Backup
-    backup_current
-    
-    # Preserva file importanti
-    local db_file=""
-    local env_file=""
-    if [[ -f "$INSTALL_DIR/sanoid-manager.db" ]]; then
-        cp "$INSTALL_DIR/sanoid-manager.db" /tmp/
-        db_file="/tmp/sanoid-manager.db"
-    fi
-    if [[ -f "$INSTALL_DIR/.env" ]]; then
-        cp "$INSTALL_DIR/.env" /tmp/
-        env_file="/tmp/.env"
-    fi
+# Backup configurazione
+log_info "Backup configurazione..."
+BACKUP_DIR="/tmp/dapx-backup-$(date +%Y%m%d_%H%M%S)"
+mkdir -p ${BACKUP_DIR}
+
+# Backup database
+if [ -f "/var/lib/dapx-backandrepl/dapx-backandrepl.db" ]; then
+    cp /var/lib/dapx-backandrepl/dapx-backandrepl.db ${BACKUP_DIR}/ 2>/dev/null || true
+fi
+if [ -f "/var/lib/sanoid-manager/sanoid-manager.db" ]; then
+    cp /var/lib/sanoid-manager/sanoid-manager.db ${BACKUP_DIR}/ 2>/dev/null || true
+fi
+
+# Backup .env
+if [ -f "/etc/dapx-backandrepl/.env" ]; then
+    cp /etc/dapx-backandrepl/.env ${BACKUP_DIR}/ 2>/dev/null || true
+fi
+
+log_success "Backup salvato in: ${BACKUP_DIR}"
+
+# Ferma servizio
+log_info "Fermata servizio..."
+systemctl stop ${SERVICE_NAME} 2>/dev/null || true
+
+# Aggiorna codice
+log_info "Aggiornamento codice da GitHub..."
+cd ${INSTALL_DIR}
+
+if [ -d ".git" ]; then
+    # Repository Git esistente
+    git fetch origin ${GITHUB_BRANCH}
+    git reset --hard origin/${GITHUB_BRANCH}
+    git pull origin ${GITHUB_BRANCH}
+else
+    # Non è un repository Git, scarica nuova versione
+    log_warning "Non è un repository Git. Download nuova versione..."
+    cd /tmp
+    rm -rf dapx-update
+    git clone --depth 1 --branch ${GITHUB_BRANCH} https://github.com/${GITHUB_REPO}.git dapx-update
     
     # Copia nuovi file
-    log_info "Installazione nuovi file..."
-    
-    # Backend
-    if [[ -d "$extracted_dir/backend" ]]; then
-        cp -r "$extracted_dir/backend/"* "$INSTALL_DIR/"
-    fi
-    
-    # Frontend
-    if [[ -d "$extracted_dir/frontend" ]]; then
-        rm -rf "$INSTALL_DIR/frontend"
-        cp -r "$extracted_dir/frontend" "$INSTALL_DIR/"
-    fi
-    
-    # Ripristina database e config
-    if [[ -n "$db_file" && -f "$db_file" ]]; then
-        cp "$db_file" "$INSTALL_DIR/"
-    fi
-    if [[ -n "$env_file" && -f "$env_file" ]]; then
-        cp "$env_file" "$INSTALL_DIR/"
-    fi
-    
-    # Aggiorna dipendenze Python
-    log_info "Aggiornamento dipendenze Python..."
-    if [[ -f "$INSTALL_DIR/requirements.txt" ]]; then
-        source "$INSTALL_DIR/venv/bin/activate"
-        pip install -q -r "$INSTALL_DIR/requirements.txt" 2>/dev/null || true
-        deactivate
-    fi
-    
-    # Aggiorna database (migrations)
-    log_info "Aggiornamento database..."
-    cd "$INSTALL_DIR"
-    source venv/bin/activate
-    python -c "from database import Base, engine; Base.metadata.create_all(bind=engine)" 2>/dev/null || true
-    deactivate
-    
-    # Migrazioni SQLite specifiche (ALTER TABLE per nuove colonne)
-    local DB_FILE="/var/lib/sanoid-manager/sanoid-manager.db"
-    if [[ -f "$DB_FILE" ]]; then
-        log_info "Applicazione migrazioni database..."
-        
-        # notification_config
-        sqlite3 "$DB_FILE" "PRAGMA table_info(notification_config);" | grep -q "smtp_to" || \
-            sqlite3 "$DB_FILE" "ALTER TABLE notification_config ADD COLUMN smtp_to VARCHAR(500);" 2>/dev/null
-        sqlite3 "$DB_FILE" "PRAGMA table_info(notification_config);" | grep -q "smtp_subject_prefix" || \
-            sqlite3 "$DB_FILE" "ALTER TABLE notification_config ADD COLUMN smtp_subject_prefix VARCHAR(100) DEFAULT '[Sanoid Manager]';" 2>/dev/null
-        
-        # sync_jobs
-        sqlite3 "$DB_FILE" "PRAGMA table_info(sync_jobs);" | grep -q "dest_vm_id" || \
-            sqlite3 "$DB_FILE" "ALTER TABLE sync_jobs ADD COLUMN dest_vm_id INTEGER;" 2>/dev/null
-        sqlite3 "$DB_FILE" "PRAGMA table_info(sync_jobs);" | grep -q "vm_group_id" || \
-            sqlite3 "$DB_FILE" "ALTER TABLE sync_jobs ADD COLUMN vm_group_id VARCHAR(50);" 2>/dev/null
-        sqlite3 "$DB_FILE" "PRAGMA table_info(sync_jobs);" | grep -q "disk_name" || \
-            sqlite3 "$DB_FILE" "ALTER TABLE sync_jobs ADD COLUMN disk_name VARCHAR(50);" 2>/dev/null
-        sqlite3 "$DB_FILE" "PRAGMA table_info(sync_jobs);" | grep -q "source_storage" || \
-            sqlite3 "$DB_FILE" "ALTER TABLE sync_jobs ADD COLUMN source_storage VARCHAR(100);" 2>/dev/null
-        sqlite3 "$DB_FILE" "PRAGMA table_info(sync_jobs);" | grep -q "dest_storage" || \
-            sqlite3 "$DB_FILE" "ALTER TABLE sync_jobs ADD COLUMN dest_storage VARCHAR(100);" 2>/dev/null
-        
-        log_success "Migrazioni applicate"
-    fi
-    
-    # Start servizio
-    log_info "Avvio servizio..."
-    systemctl start "$SERVICE_NAME"
-    
-    # Cleanup
-    rm -rf "$temp_dir" "$archive"
-    
-    log_success "Aggiornamento completato!"
-}
+    rsync -av --exclude='.git' /tmp/dapx-update/ ${INSTALL_DIR}/
+    rm -rf /tmp/dapx-update
+fi
 
-# Menu principale
-show_menu() {
-    local current=$(get_current_version)
-    
-    echo ""
-    echo "Versione corrente: ${GREEN}${current}${NC}"
-    echo ""
-    echo "Opzioni:"
-    echo "  1) Verifica aggiornamenti"
-    echo "  2) Aggiorna all'ultima versione"
-    echo "  3) Aggiorna a versione specifica"
-    echo "  4) Scarica da URL"
-    echo "  5) Ripristina backup"
-    echo "  6) Esci"
-    echo ""
-    read -p "Seleziona [1-6]: " choice
-    
-    case $choice in
-        1)
-            check_updates
-            ;;
-        2)
-            update_latest
-            ;;
-        3)
-            update_specific
-            ;;
-        4)
-            update_from_url
-            ;;
-        5)
-            do_restore
-            ;;
-        6)
-            exit 0
-            ;;
-        *)
-            log_error "Opzione non valida"
-            show_menu
-            ;;
-    esac
-}
+log_success "Codice aggiornato"
 
-check_updates() {
-    local current=$(get_current_version)
-    local latest=$(get_latest_version)
-    
-    echo ""
-    echo "Versione corrente: ${GREEN}${current}${NC}"
-    echo "Ultima versione:   ${BLUE}${latest}${NC}"
-    
-    if [[ "$current" == "$latest" ]]; then
-        log_success "Sei già alla versione più recente!"
-    elif [[ "$latest" != "unknown" ]]; then
-        log_warning "Aggiornamento disponibile!"
-        read -p "Vuoi aggiornare ora? [y/N]: " yn
-        if [[ "$yn" =~ ^[Yy]$ ]]; then
-            update_latest
-        fi
-    else
-        log_error "Impossibile verificare aggiornamenti. Controlla la connessione."
-    fi
-    
-    show_menu
-}
+# Aggiorna dipendenze Python
+log_info "Aggiornamento dipendenze Python..."
+cd ${INSTALL_DIR}/backend
+pip3 install --no-cache-dir -r requirements.txt --upgrade 2>/dev/null || \
+pip install --no-cache-dir -r requirements.txt --upgrade
 
-update_latest() {
-    local latest=$(get_latest_version)
-    
-    if [[ "$latest" == "unknown" ]]; then
-        log_error "Impossibile ottenere ultima versione"
-        show_menu
-        return
-    fi
-    
-    log_info "Aggiornamento a versione ${latest}..."
-    
-    local archive=$(download_release "$latest")
-    
-    if [[ -n "$archive" && -f "$archive" ]]; then
-        install_update "$archive"
-    else
-        log_error "Download fallito"
-    fi
-    
-    show_menu
-}
+log_success "Dipendenze aggiornate"
 
-update_specific() {
-    read -p "Inserisci versione (es: 3.0.0): " version
-    
-    if [[ -z "$version" ]]; then
-        log_error "Versione non specificata"
-        show_menu
-        return
-    fi
-    
-    log_info "Aggiornamento a versione ${version}..."
-    
-    local archive=$(download_release "$version")
-    
-    if [[ -n "$archive" && -f "$archive" ]]; then
-        install_update "$archive"
-    else
-        log_error "Download fallito. Verifica che la versione esista."
-    fi
-    
-    show_menu
-}
+# Aggiorna frontend
+log_info "Aggiornamento frontend..."
+if [ -d "${INSTALL_DIR}/frontend/dist" ]; then
+    log_success "Frontend aggiornato"
+fi
 
-update_from_url() {
-    read -p "Inserisci URL del pacchetto .tar.gz: " url
-    
-    if [[ -z "$url" ]]; then
-        log_error "URL non specificato"
-        show_menu
-        return
-    fi
-    
-    local temp_file="/tmp/sanoid-manager-download.tar.gz"
-    
-    log_info "Download da URL..."
-    if curl -L -o "$temp_file" "$url"; then
-        install_update "$temp_file"
-    else
-        log_error "Download fallito"
-    fi
-    
-    show_menu
-}
+# Riavvia servizio
+log_info "Riavvio servizio..."
+systemctl daemon-reload
+systemctl start ${SERVICE_NAME}
 
-do_restore() {
-    if [[ -d "$BACKUP_DIR" ]]; then
-        read -p "Ripristinare il backup precedente? [y/N]: " yn
-        if [[ "$yn" =~ ^[Yy]$ ]]; then
-            systemctl stop "$SERVICE_NAME" 2>/dev/null || true
-            restore_backup
-            systemctl start "$SERVICE_NAME"
-            log_success "Backup ripristinato!"
-        fi
-    else
-        log_warning "Nessun backup disponibile"
-    fi
-    
-    show_menu
-}
+# Verifica servizio
+sleep 3
+if systemctl is-active --quiet ${SERVICE_NAME}; then
+    log_success "Servizio avviato correttamente"
+else
+    log_error "Errore avvio servizio. Controlla i log:"
+    echo "  journalctl -u ${SERVICE_NAME} -n 50"
+    exit 1
+fi
 
-# Parametri da riga di comando
-case "${1:-}" in
-    --check)
-        current=$(get_current_version)
-        latest=$(get_latest_version)
-        echo "current=$current"
-        echo "latest=$latest"
-        if [[ "$current" != "$latest" && "$latest" != "unknown" ]]; then
-            echo "update_available=true"
-        else
-            echo "update_available=false"
-        fi
-        ;;
-    --update)
-        update_latest
-        ;;
-    --version)
-        echo $(get_current_version)
-        ;;
-    *)
-        show_menu
-        ;;
-esac
-
+# Mostra versione
+VERSION=$(grep -oP 'version.*".*?"' ${INSTALL_DIR}/backend/main.py 2>/dev/null | head -1 || echo "N/A")
+log_success "════════════════════════════════════════════════"
+log_success "Aggiornamento completato!"
+echo ""
+log_info "Backup salvato in: ${BACKUP_DIR}"
+log_info "Log servizio: journalctl -u ${SERVICE_NAME} -f"
+log_success "════════════════════════════════════════════════"
