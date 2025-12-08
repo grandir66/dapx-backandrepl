@@ -3921,6 +3921,30 @@
                         <button class="btn btn-primary" @click="saveSettings" :disabled="loading || !isAdmin" v-if="isAdmin">Salva</button>
                     </div>
                     
+                    <!-- Database Reset Section -->
+                    <div class="card" v-if="settingsTab === 'general' && isAdmin" style="margin-top: 20px; border-color: var(--accent-danger);">
+                        <h3 class="card-title" style="margin-bottom: 20px; color: var(--accent-danger);">🗄️ Database</h3>
+                        <div style="background: rgba(255, 87, 34, 0.1); padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                            <p style="color: var(--text-primary); margin-bottom: 12px;">
+                                <strong>⚠️ Reset Database</strong><br>
+                                Questa operazione elimina <strong>TUTTI</strong> i dati: nodi, job, utenti, configurazioni e log.
+                                Il sistema tornerà allo stato iniziale come dopo l'installazione.
+                            </p>
+                            <p style="color: var(--text-secondary); font-size: 0.9em;">
+                                <strong>Dopo il reset:</strong> Dovrai ricreare l'utente amministratore e riavviare il servizio.
+                            </p>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 16px;">
+                            <label class="form-label" style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" v-model="databaseResetBackup">
+                                Crea backup automatico prima del reset
+                            </label>
+                        </div>
+                        <button class="btn btn-danger" @click="resetDatabase" :disabled="loading">
+                            🔄 Reset Database
+                        </button>
+                    </div>
+                    
                     <div class="card" v-if="settingsTab === 'auth' && isAdmin">
                         <h3 class="card-title" style="margin-bottom: 20px;">🔐 Autenticazione</h3>
                         <div class="grid-2">
@@ -5874,6 +5898,7 @@
                 
                 // Settings
                 const settings = ref({ syncoid_default_compress: 'lz4', syncoid_default_mbuffer: '128M', log_retention_days: 30 });
+                const databaseResetBackup = ref(true);
                 const authSettings = ref({ auth_method: 'proxmox', auth_session_timeout: 480, auth_allow_local_fallback: true });
                 const notifSettings = ref({ 
                     smtp_enabled: false, 
@@ -8340,6 +8365,50 @@
                     loading.value = false;
                 };
                 
+                const resetDatabase = async () => {
+                    const msg = `⚠️ ATTENZIONE: Stai per resettare il database!\n\n` +
+                        `Questa operazione è IRREVERSIBILE e eliminerà:\n` +
+                        `• Tutti i nodi\n` +
+                        `• Tutti i job (replica, backup, migrazione)\n` +
+                        `• Tutti gli utenti (tranne quello che ricreerai)\n` +
+                        `• Tutte le configurazioni\n` +
+                        `• Tutti i log\n\n` +
+                        `Il sistema tornerà allo stato iniziale.\n\n` +
+                        `Sei ASSOLUTAMENTE sicuro?`;
+                    
+                    if (!confirm(msg)) return;
+                    
+                    // Doppia conferma
+                    if (!confirm('Ultima conferma: Reset database?')) return;
+                    
+                    loading.value = true;
+                    try {
+                        const res = await axios.post(`${API}/settings/database/reset`, {
+                            confirm: true,
+                            backup: databaseResetBackup.value
+                        });
+                        
+                        if (res.data.success) {
+                            showToast(
+                                `Database resettato! ${res.data.backup_path ? 'Backup creato: ' + res.data.backup_path : ''}\n` +
+                                `Riavvia il servizio per completare.`,
+                                'success'
+                            );
+                            
+                            // Logout automatico dopo 3 secondi
+                            setTimeout(() => {
+                                doLogout();
+                                window.location.reload();
+                            }, 3000);
+                        } else {
+                            showToast(res.data.message || 'Errore reset database', 'error');
+                        }
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore reset database', 'error');
+                    }
+                    loading.value = false;
+                };
+                
                 const testEmailNotification = async () => {
                     loading.value = true;
                     try {
@@ -9010,7 +9079,7 @@
                     loadHostBackupData, loadHostBackupJobs, loadHostBackupPaths, loadHostBackups, 
                     createHostBackupJob, runHostBackupJob, editHostBackupJob, deleteHostBackupJob,
                     createHostBackup, deleteHostBackup, applyHostRetention,
-                    settings, authSettings, notifSettings,
+                    settings, authSettings, notifSettings, databaseResetBackup,
                     showNodeModal, showEditNodeModal, editingNode, showSyncJobModal, editingSyncJobId, syncJobCompatibility, showUserModal, editingUser, showInfoModal,
                     // SSH Keys
                     sshKeyInfo, sshTestResults, showDistributeModal, distributePassword, selectedNodesForDistribute, distributeResults,
@@ -9047,7 +9116,7 @@
                     showSyncCloneModal, syncCloneSourceSnap, syncCloneName, confirmSyncClone,
                     getVmDatasets,
                     editUser, saveUser, deleteUser,
-                    saveSettings, saveAuthSettings, saveNotifSettings, testEmailNotification,
+                    saveSettings, saveAuthSettings, saveNotifSettings, resetDatabase, testEmailNotification,
                     sendDailySummary, saveDailySummaryHour, loadDailySummaryHour, dailySummaryHour,
                     // SSH Keys functions
                     loadSSHKeyInfo, generateSSHKey, regenerateSSHKey, copyPublicKey,

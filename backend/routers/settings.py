@@ -8,14 +8,16 @@ from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, field_validator
 from datetime import datetime
+import logging
 
 from database import (
     get_db, Settings, SystemConfig, NotificationConfig, User,
-    get_config_value, set_config_value, init_default_config
+    get_config_value, set_config_value, init_default_config, SessionLocal
 )
 from routers.auth import get_current_user, require_admin, log_audit
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ============== Schemas ==============
@@ -691,3 +693,88 @@ async def delete_ssl_certificate(
         return {"success": True, "message": f"Eliminati: {', '.join(deleted)}"}
     else:
         return {"success": False, "message": "Nessun certificato da eliminare"}
+
+
+class DatabaseResetRequest(BaseModel):
+    confirm: bool = False
+    backup: bool = True  # Crea backup prima del reset
+
+
+@router.post("/database/reset")
+async def reset_database(
+    reset_request: DatabaseResetRequest,
+    request: Request,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Reset completo del database - ELIMINA TUTTI I DATI
+    
+    ⚠️ ATTENZIONE: Questa operazione è IRREVERSIBILE!
+    Elimina tutti i nodi, job, utenti, configurazioni e log.
+    Il sistema tornerà allo stato iniziale come dopo l'installazione.
+    
+    Richiede conferma esplicita (confirm=true).
+    """
+    if not reset_request.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Reset database richiede conferma esplicita. Imposta 'confirm': true"
+        )
+    
+    import shutil
+    from pathlib import Path
+    from database import DATABASE_PATH, engine, Base, init_default_config
+    
+    # Crea backup se richiesto
+    backup_path = None
+    if reset_request.backup:
+        backup_dir = Path(DATABASE_PATH).parent / "backups"
+        backup_dir.mkdir(exist_ok=True)
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        backup_path = backup_dir / f"database_backup_{timestamp}.db"
+        
+        if Path(DATABASE_PATH).exists():
+            shutil.copy2(DATABASE_PATH, backup_path)
+            logger.info(f"Backup database creato: {backup_path}")
+    
+    try:
+        # Chiudi tutte le connessioni
+        db.close()
+        engine.dispose()
+        
+        # Elimina il database
+        if Path(DATABASE_PATH).exists():
+            Path(DATABASE_PATH).unlink()
+            logger.info(f"Database eliminato: {DATABASE_PATH}")
+        
+        # Ricrea le tabelle
+        Base.metadata.create_all(bind=engine)
+        logger.info("Tabelle database ricreate")
+        
+        # Reinizializza configurazione di default
+        new_db = SessionLocal()
+        try:
+            init_default_config(new_db)
+            logger.info("Configurazione di default reinizializzata")
+        finally:
+            new_db.close()
+        
+        log_audit(
+            db, user.id, "database_reset", "system",
+            details=f"Database reset completato. Backup: {backup_path}" if backup_path else "Database reset completato (no backup)",
+            ip_address=request.client.host if request.client else None
+        )
+        
+        return {
+            "success": True,
+            "message": "Database resettato con successo. Il sistema è stato riportato allo stato iniziale.",
+            "backup_path": str(backup_path) if backup_path else None,
+            "warning": "⚠️ Riavvia il servizio per completare il reset. Dovrai ricreare l'utente amministratore."
+        }
+    except Exception as e:
+        logger.error(f"Errore durante reset database: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Errore durante reset database: {str(e)}"
+        )

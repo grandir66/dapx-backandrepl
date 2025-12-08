@@ -1,9 +1,89 @@
-.DS_Store
-*.db
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+backend/venv/
 venv/
+ENV/
+env/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+data/
+*.db-journal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Environment variables
 .env
-config.env
-backend/config.env
-backend/certs/
+.env.local
+*.env
+!config.env.example
+
+# Backup files
+*.bak
+*.backup
+backups/
+*.db.backup
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Build artifacts
+*.pyc
+*.pyo
+*.pyd
+
+# Certificates (non committare certificati reali)
+*.crt
+*.key
+*.pem
+!backend/scripts/generate_cert.py
+
+# Old/unused directories
+backend-btrfs/
