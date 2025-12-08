@@ -791,13 +791,6 @@
                     
                     <div class="nav-section">
                         <div class="nav-section-title">Storage</div>
-                <div class="nav-item" :class="{ active: currentPage === 'snapshots' }" @click="currentPage = 'snapshots'">
-                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
-                    </svg>
-                    Snapshot
-                </div>
                 <div class="nav-item" :class="{ active: currentPage === 'sync' }" @click="currentPage = 'sync'">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
@@ -2027,80 +2020,12 @@
                 <!-- Snapshots, Sync, VMs, Logs, Settings pages... -->
                 <!-- (keeping existing implementation but with auth checks) -->
                 
+            <!-- Pagina Snapshot rimossa - funzionalità migrata nella pagina VM -->
+            <!-- 
             <div v-if="currentPage === 'snapshots'">
-                <div class="page-header">
-                    <h1 class="page-title">Gestione Snapshot</h1>
-                    <p class="page-subtitle">Configurazione Sanoid e snapshot ZFS</p>
-                </div>
-                
-                <div class="card">
-                        <div class="card-header"><h3 class="card-title">Seleziona Nodo</h3></div>
-                    <div class="form-group">
-                        <select class="form-input" v-model="selectedNodeId" @change="loadNodeDatasets">
-                            <option value="">-- Seleziona un nodo --</option>
-                                <option v-for="node in nodes" :key="node.id" :value="node.id">{{ node.name }} ({{ node.hostname }})</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="card" v-if="selectedNodeId && datasets.length > 0">
-                    <div class="card-header">
-                        <h3 class="card-title">Dataset ZFS</h3>
-                        <div>
-                                <button class="btn btn-secondary btn-sm" @click="loadNodeSnapshots" :disabled="loading">📷 Carica Snapshot</button>
-                                <button class="btn btn-primary btn-sm" @click="applySanoidConfig" :disabled="loading" v-if="canEdit">Applica Config</button>
-                        </div>
-                    </div>
-                    <div class="table-container">
-                        <table>
-                                <thead><tr><th>Dataset</th><th>Usato</th><th>Disponibile</th><th>Snapshot</th><th>Sanoid</th><th>Template</th></tr></thead>
-                            <tbody>
-                                <tr v-for="ds in datasets" :key="ds.id">
-                                    <td>{{ ds.name }}</td>
-                                    <td>{{ ds.used }}</td>
-                                    <td>{{ ds.available }}</td>
-                                    <td>{{ ds.snapshot_count }}</td>
-                                        <td><input type="checkbox" v-model="ds.sanoid_enabled" @change="updateDatasetConfig(ds)" :disabled="!canEdit"></td>
-                                    <td>
-                                            <select class="form-input" style="width: auto" v-model="ds.sanoid_template" @change="updateDatasetConfig(ds)" :disabled="!ds.sanoid_enabled || !canEdit">
-                                            <option value="default">Default</option>
-                                            <option value="production">Production</option>
-                                            <option value="minimal">Minimal</option>
-                                            <option value="backup">Backup</option>
-                                            <option value="vm">VM</option>
-                                        </select>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                
-                <!-- Snapshot del Nodo -->
-                <div class="card" v-if="selectedNodeId && snapshots.length > 0" style="margin-top: 20px;">
-                    <div class="card-header">
-                        <h3 class="card-title">📷 Snapshot ({{ snapshots.length }})</h3>
-                        <button class="btn btn-secondary btn-sm" @click="loadNodeSnapshots" :disabled="loading">🔄 Aggiorna</button>
-                    </div>
-                    <div class="table-container" style="max-height: 400px; overflow-y: auto;">
-                        <table>
-                            <thead><tr><th>Dataset</th><th>Snapshot</th><th>Dimensione</th><th>Data Creazione</th></tr></thead>
-                            <tbody>
-                                <tr v-for="snap in snapshots" :key="snap.full_name">
-                                    <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">{{ snap.dataset }}</td>
-                                    <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--accent-primary);">{{ snap.snapshot }}</td>
-                                    <td>{{ snap.used }}</td>
-                                    <td>{{ snap.creation }}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                
-                <div class="card" v-if="selectedNodeId && snapshots.length === 0 && datasets.length > 0" style="margin-top: 20px; text-align: center; padding: 30px; color: var(--text-secondary);">
-                    <p>Clicca "📷 Carica Snapshot" per visualizzare gli snapshot di questo nodo</p>
-                </div>
+                ... pagina snapshot rimossa ...
             </div>
+            -->
             
             <div v-if="currentPage === 'sync'">
                 <div class="page-header">
@@ -4447,7 +4372,7 @@
                     <div style="display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 2px solid var(--border-color);">
                         <button class="btn" :class="vmSnapshotTab === 'snapshots' ? 'btn-primary' : 'btn-secondary'" 
                                 @click="vmSnapshotTab = 'snapshots'" style="border-radius: 8px 8px 0 0;">
-                            📸 Snapshot ({{ (vmSnapshotData.proxmoxTotal || 0) + (vmSnapshotData.sanoidTotal || 0) }})
+                            📸 Snapshot ({{ (vmSnapshotData.proxmoxTotal || 0) + (vmSnapshotData.sanoidTotal || 0) + (vmSnapshotData.syncoidTotal || 0) }})
                         </button>
                         <button class="btn" :class="vmSnapshotTab === 'config' ? 'btn-primary' : 'btn-secondary'" 
                                 @click="vmSnapshotTab = 'config'" style="border-radius: 8px 8px 0 0;">
@@ -4462,7 +4387,7 @@
                             <p style="margin-top: 16px;">Caricamento snapshot...</p>
                         </div>
                         
-                        <div v-else-if="(vmSnapshotData.proxmoxTotal || 0) === 0 && (vmSnapshotData.sanoidTotal || 0) === 0" 
+                        <div v-else-if="(vmSnapshotData.proxmoxTotal || 0) === 0 && (vmSnapshotData.sanoidTotal || 0) === 0 && (vmSnapshotData.syncoidTotal || 0) === 0" 
                              style="text-align: center; padding: 40px; color: var(--text-secondary);">
                             <p>Nessuno snapshot trovato per questa VM</p>
                         </div>
@@ -4529,6 +4454,47 @@
                                             <tr v-for="snap in vmSnapshotData.sanoidSnapshots" :key="snap.full_name">
                                                 <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">{{ snap.dataset.split('/').pop() }}</td>
                                                 <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--accent-secondary);">
+                                                    {{ snap.snapshot }}
+                                                </td>
+                                                <td>{{ snap.used }}</td>
+                                                <td>{{ snap.creation }}</td>
+                                                <td>
+                                                    <button class="btn btn-danger btn-sm" @click="rollbackToSnapshot(snap)" :disabled="loading" title="Rollback (distruttivo!)">
+                                                        🔄 Rollback
+                                                    </button>
+                                                    <button class="btn btn-secondary btn-sm" @click="cloneSnapshot(snap)" :disabled="loading" title="Crea clone" style="margin-left: 4px;">
+                                                        📋 Clone
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <!-- Snapshot Syncoid (da job di replica) -->
+                            <div v-if="vmSnapshotData.syncoidSnapshots && vmSnapshotData.syncoidSnapshots.length > 0" style="margin-bottom: 30px;">
+                                <h4 style="color: #ff9f43; margin-bottom: 12px;">
+                                    🔄 Snapshot Syncoid ({{ vmSnapshotData.syncoidTotal || 0 }})
+                                </h4>
+                                <small style="color: var(--text-secondary); display: block; margin-bottom: 8px;">
+                                    Snapshot creati durante le repliche ZFS/BTRFS
+                                </small>
+                                <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Dataset</th>
+                                                <th>Snapshot</th>
+                                                <th>Dimensione</th>
+                                                <th>Data Creazione</th>
+                                                <th>Azioni</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="snap in vmSnapshotData.syncoidSnapshots" :key="snap.full_name">
+                                                <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">{{ snap.dataset.split('/').pop() }}</td>
+                                                <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #ff9f43;">
                                                     {{ snap.snapshot }}
                                                 </td>
                                                 <td>{{ snap.used }}</td>
@@ -7908,6 +7874,8 @@
                         proxmoxDatasets: {},
                         sanoidTotal: 0,
                         sanoidSnapshots: [],
+                        syncoidTotal: 0,
+                        syncoidSnapshots: [],
                         loading: true
                     };
                     vmSnapshotTab.value = 'snapshots';
@@ -7934,6 +7902,12 @@
                         if (res.data.sanoid_snapshots) {
                             vmSnapshotData.value.sanoidTotal = res.data.sanoid_snapshots.length || 0;
                             vmSnapshotData.value.sanoidSnapshots = res.data.sanoid_snapshots || [];
+                        }
+                        
+                        // Snapshot Syncoid
+                        if (res.data.syncoid_snapshots) {
+                            vmSnapshotData.value.syncoidTotal = res.data.syncoid_snapshots.length || 0;
+                            vmSnapshotData.value.syncoidSnapshots = res.data.syncoid_snapshots || [];
                         }
                         
                         vmSnapshotData.value.total = res.data.total || 0;

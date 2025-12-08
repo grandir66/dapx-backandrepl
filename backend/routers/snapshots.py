@@ -713,6 +713,7 @@ async def get_vm_all_snapshots(
     datasets_resp = await get_vm_datasets(node_id, vm_id, vm_type, user, db)
     
     sanoid_snapshots = []
+    syncoid_snapshots = []
     if datasets_resp and datasets_resp.datasets:
         for dataset in datasets_resp.datasets:
             snaps = await ssh_service.get_snapshots(
@@ -722,16 +723,21 @@ async def get_vm_all_snapshots(
                 username=node.ssh_user,
                 key_path=node.ssh_key_path
             )
-            # Filtra solo snapshot sanoid (autosnap_*)
+            # Filtra snapshot per tipo
             for snap in snaps:
-                if 'autosnap_' in snap.get('snapshot', ''):
+                snap_name = snap.get('snapshot', '')
+                if 'autosnap_' in snap_name:
                     snap['source'] = 'sanoid'
                     sanoid_snapshots.append(snap)
+                elif 'syncoid_' in snap_name:
+                    snap['source'] = 'syncoid'
+                    syncoid_snapshots.append(snap)
     
     return {
         "vm_id": vm_id,
         "node_name": node.name,
         "proxmox_snapshots": proxmox_snaps,
         "sanoid_snapshots": sanoid_snapshots,
-        "total": proxmox_snaps.get("total_snapshots", 0) + len(sanoid_snapshots)
+        "syncoid_snapshots": syncoid_snapshots,
+        "total": proxmox_snaps.get("total_snapshots", 0) + len(sanoid_snapshots) + len(syncoid_snapshots)
     }
