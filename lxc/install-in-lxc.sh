@@ -39,15 +39,21 @@ log_info "═══════════════════════�
 log_info "Installazione DAPX-backandrepl in Container LXC"
 log_info "════════════════════════════════════════════════"
 
-# Verifica Python
-if ! command -v python3 &> /dev/null; then
-    log_info "Installazione Python3..."
-    apt-get update
-    apt-get install -y python3 python3-pip python3-venv
-fi
+# Verifica Python e pip
+log_info "Verifica Python3 e pip3..."
+apt-get update
+apt-get install -y python3 python3-pip python3-venv python3-full
 
+# Verifica versione
 PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
 log_info "Python versione: ${PYTHON_VERSION}"
+
+# Verifica pip
+if ! command -v pip3 &> /dev/null; then
+    log_error "pip3 non trovato dopo installazione"
+    # Prova installazione alternativa
+    apt-get install -y python3-pip || python3 -m ensurepip --upgrade
+fi
 
 # Crea directory
 log_info "Creazione directory..."
@@ -83,6 +89,10 @@ fi
 # Installa dipendenze Python
 log_info "Installazione dipendenze Python..."
 cd ${INSTALL_DIR}/backend
+
+# In Debian 12+ pip richiede --break-system-packages o venv
+# Usiamo --break-system-packages per semplicità in container dedicato
+pip3 install --no-cache-dir --break-system-packages -r requirements.txt 2>/dev/null || \
 pip3 install --no-cache-dir -r requirements.txt
 
 # Crea file di configurazione
