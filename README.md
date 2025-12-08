@@ -44,7 +44,23 @@
 
 ## 🚀 Installazione Rapida
 
-### 1. Scarica e installa
+### Opzione 1: Installazione Containerizzata (Consigliata per sviluppo/test)
+
+```bash
+# Clona il repository
+git clone https://github.com/grandir66/dapx-backandrepl.git
+cd dapx-backandrepl
+
+# Esegui installazione Docker
+chmod +x docker-install.sh
+./docker-install.sh
+```
+
+Il container sarà disponibile su `http://localhost:8420`
+
+> 📘 **Vedi [DOCKER.md](DOCKER.md) per documentazione completa sull'installazione containerizzata**
+
+### Opzione 2: Installazione Standard (Consigliata per produzione)
 
 ```bash
 # Clona il repository
@@ -61,9 +77,9 @@ Oppure scarica l'ultima release:
 
 ```bash
 cd /tmp
-wget https://github.com/grandir66/dapx-backandrepl/archive/refs/tags/v3.3.0.tar.gz
-tar xzf v3.3.0.tar.gz
-cd dapx-backandrepl-3.3.0
+wget https://github.com/grandir66/dapx-backandrepl/archive/refs/tags/v3.4.5.tar.gz
+tar xzf v3.4.5.tar.gz
+cd dapx-backandrepl-3.4.5
 chmod +x install.sh
 ./install.sh
 ```

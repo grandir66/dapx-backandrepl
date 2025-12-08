@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  dapx-backandrepl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dapx-backandrepl
+    image: dapx-backandrepl:latest
+    restart: unless-stopped
+    
+    ports:
+      - "8420:8420"
+    
+    volumes:
+      # Database persistente
+      - ./data:/data
+      # Configurazione
+      - ./config:/config
+      # Log
+      - ./logs:/logs
+      # Chiavi SSH (monta la directory SSH dell'host)
+      - ${HOME}/.ssh:/home/dapx/.ssh:ro
+      # Opzionale: certificati SSL personalizzati
+      - ./certs:/certs:ro
+    
+    environment:
+      - DAPX_DB=/data/dapx-backandrepl.db
+      - DAPX_PORT=8420
+      - DAPX_LOG_LEVEL=INFO
+      - DAPX_SECRET_KEY=${DAPX_SECRET_KEY:-change-me-in-production}
+      - DAPX_TOKEN_EXPIRE=480
+      - DAPX_CORS_ORIGINS=
+    
+    # Se necessario, esegui come root per accesso SSH completo
+    # Rimuovi questa riga se vuoi usare utente non-root (dovrai configurare SSH diversamente)
+    # user: "0:0"
+    
+    # Limiti risorse
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8420/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
