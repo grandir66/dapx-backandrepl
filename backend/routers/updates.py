@@ -36,7 +36,7 @@ update_status = {
 GITHUB_REPO = "grandir66/dapx-backandrepl"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}"
 INSTALL_DIR = "/opt/dapx-backandrepl"
-VERSION_FILE = os.path.join(INSTALL_DIR, "version.txt")
+VERSION_FILE = os.path.join(INSTALL_DIR, "VERSION")  # File VERSION nella root
 
 # Modelli
 class UpdateCheckResponse(BaseModel):
