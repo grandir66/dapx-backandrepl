@@ -7876,12 +7876,24 @@
                             return;
                         }
                         
-                        // Pre-seleziona nel wizard e vai alla pagina sync
+                        // Pre-seleziona nel wizard
                         vmReplicaWizard.value.sourceNodeId = selectedVmNodeId.value;
                         vmReplicaWizard.value.syncMethod = 'syncoid';
-                        await loadSourceVMs();
+                        vmReplicaWizard.value.active = false;  // Reset wizard
+                        
+                        // Vai alla pagina sync
                         currentPage.value = 'sync';
-                        showToast(`Seleziona la VM ${vm.name || vm.vmid} e configura la destinazione`, 'info');
+                        
+                        // Carica le VM e poi seleziona quella cliccata
+                        await loadSourceVMs();
+                        
+                        // Trova la VM nell'elenco caricato e selezionala
+                        const vmInList = sourceVMs.value.find(v => v.vmid == vm.vmid);
+                        if (vmInList) {
+                            showToast(`Seleziona il nodo destinazione, poi clicca "Configura Replica" per ${vm.name || vm.vmid}`, 'info');
+                        } else {
+                            showToast(`Seleziona destinazione per la replica di ${vm.name || vm.vmid}`, 'info');
+                        }
                     } catch (e) {
                         showToast('Errore verifica dataset. Prova con Backup (PBS).', 'warning');
                         console.error(e);
