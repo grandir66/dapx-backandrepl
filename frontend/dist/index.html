@@ -4737,7 +4737,7 @@
         <div class="modal-overlay" v-if="isAuthenticated && showSyncJobModal" @click.self="showSyncJobModal = false">
             <div class="modal" style="max-width: 700px;">
                 <div class="modal-header">
-                    <h3 class="modal-title">Nuovo Job Replica</h3>
+                    <h3 class="modal-title">{{ editingSyncJobId ? '✏️ Modifica Job Replica' : '➕ Nuovo Job Replica' }}</h3>
                     <button class="btn btn-icon" @click="showSyncJobModal = false">✕</button>
                 </div>
                 <div class="modal-body">
@@ -4852,14 +4852,18 @@
                     </div>
                     
                     <div v-if="newSyncJob.register_vm" style="background: rgba(0, 212, 255, 0.1); padding: 16px; border-radius: 8px; border: 1px solid var(--accent-secondary);">
-                        <div class="grid-2">
+                        <div class="grid-3">
                             <div class="form-group" style="margin-bottom: 8px;">
                                 <label class="form-label">VMID Sorgente</label>
                                 <input type="number" class="form-input" v-model="newSyncJob.vm_id" placeholder="100">
-                        </div>
+                            </div>
                             <div class="form-group" style="margin-bottom: 8px;">
-                                <label class="form-label">VMID Destinazione <small style="color: var(--text-secondary);">(opzionale, se diverso)</small></label>
+                                <label class="form-label">VMID Destinazione <small style="color: var(--text-secondary);">(opz.)</small></label>
                                 <input type="number" class="form-input" v-model="newSyncJob.dest_vm_id" :placeholder="newSyncJob.vm_id || '100'">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 8px;">
+                                <label class="form-label">Suffisso Nome VM</label>
+                                <input type="text" class="form-input" v-model="newSyncJob.dest_vm_name_suffix" placeholder="-replica">
                             </div>
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
@@ -4870,7 +4874,7 @@
                             </select>
                         </div>
                         <small style="color: var(--text-secondary); display: block; margin-top: 8px;">
-                            💡 Se specifichi un VMID destinazione diverso, la VM verrà registrata con il nuovo ID sul nodo di destinazione.
+                            💡 Il suffisso verrà aggiunto al nome della VM (es: web01 → web01-replica)
                         </small>
                     </div>
                 </div>
@@ -5248,6 +5252,7 @@
                     register_vm: false, 
                     vm_id: '', 
                     dest_vm_id: '', 
+                    dest_vm_name_suffix: '',
                     vm_type: 'qemu',
                     notify_mode: 'daily',
                     notify_subject: '',
@@ -6996,7 +7001,7 @@
                         }
                         showSyncJobModal.value = false;
                         editingSyncJobId.value = null;
-                        newSyncJob.value = { name: '', source_node_id: '', source_dataset: '', dest_node_id: '', dest_dataset: '', schedule: '', schedulePreset: '', compress: 'lz4', recursive: false, mbuffer_size: '128M', no_sync_snap: false, force_delete: false, extra_args: '', register_vm: false, vm_id: '', dest_vm_id: '', vm_type: 'qemu', notify_mode: 'daily', notify_subject: '' };
+                        newSyncJob.value = { name: '', source_node_id: '', source_dataset: '', dest_node_id: '', dest_dataset: '', schedule: '', schedulePreset: '', compress: 'lz4', recursive: false, mbuffer_size: '128M', no_sync_snap: false, force_delete: false, extra_args: '', register_vm: false, vm_id: '', dest_vm_id: '', dest_vm_name_suffix: '', vm_type: 'qemu', notify_mode: 'daily', notify_subject: '' };
                         sourceDatasets.value = [];
                         destDatasets.value = [];
                         selectedSchedule.value = '';
@@ -7055,10 +7060,24 @@
                         register_vm: job.register_vm || false,
                         vm_id: job.vm_id || '',
                         dest_vm_id: job.dest_vm_id || '',
+                        dest_vm_name_suffix: job.dest_vm_name_suffix || '',
                         vm_type: job.vm_type || 'qemu',
                         notify_mode: job.notify_mode || 'daily',
                         notify_subject: job.notify_subject || ''
                     };
+                    
+                    // Estrai pool e sottopercorso dal dest_dataset
+                    if (job.dest_dataset) {
+                        const parts = job.dest_dataset.split('/');
+                        destRootPool.value = parts[0] || '';
+                        // Il sottopercorso è tutto tranne il primo e l'ultimo elemento
+                        if (parts.length > 2) {
+                            destSubPath.value = parts.slice(1, -1).join('/');
+                        } else if (parts.length === 2) {
+                            destSubPath.value = '';
+                        }
+                    }
+                    
                     await loadSourceDatasets();
                     await loadDestDatasets();
                     showSyncJobModal.value = true;
