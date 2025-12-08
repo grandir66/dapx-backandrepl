@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="DAPX-backandrepl",
     description="Sistema centralizzato di backup e replica per Proxmox VE. Supporta ZFS (Sanoid/Syncoid), BTRFS (btrfs send/receive) e PBS (Proxmox Backup Server).",
-    version="3.3.0",
+    version="3.4.0",
     lifespan=lifespan
 )
 
@@ -107,7 +107,7 @@ app.include_router(host_info.router, prefix="/api", tags=["Host Info & Dashboard
 async def health_check():
     return {
         "status": "healthy",
-        "version": "3.3.0",
+        "version": "3.4.0",
         "auth_enabled": True,
         "features": ["zfs", "btrfs", "pbs"]
     }
