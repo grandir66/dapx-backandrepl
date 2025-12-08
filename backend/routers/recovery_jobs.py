@@ -731,7 +731,7 @@ async def create_recovery_job(
     
     # Crea il job
     job = RecoveryJob(
-        **job_data.dict(),
+        **job_data.model_dump(),
         created_by=user.id
     )
     db.add(job)
@@ -773,7 +773,7 @@ async def update_recovery_job(
     if not job:
         raise HTTPException(status_code=404, detail="Recovery job non trovato")
     
-    for key, value in job_data.dict(exclude_unset=True).items():
+    for key, value in job_data.model_dump(exclude_unset=True).items():
         setattr(job, key, value)
     
     job.updated_at = datetime.utcnow()

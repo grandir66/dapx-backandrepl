@@ -187,8 +187,8 @@ async def create_node(
     ssh_password = node.ssh_password
     auto_distribute_key = node.auto_distribute_key
     
-    # Crea dict senza campi extra
-    node_data = node.dict(exclude={'ssh_password', 'auto_distribute_key'})
+    # Crea dict senza campi extra (model_dump per pydantic v2)
+    node_data = node.model_dump(exclude={'ssh_password', 'auto_distribute_key'})
     
     db_node = Node(**node_data)
     db.add(db_node)
@@ -323,7 +323,7 @@ async def update_node(
     if not check_node_access(user, node):
         raise HTTPException(status_code=403, detail="Accesso negato a questo nodo")
     
-    for key, value in update.dict(exclude_unset=True).items():
+    for key, value in update.model_dump(exclude_unset=True).items():
         setattr(node, key, value)
     
     node.updated_at = datetime.utcnow()

@@ -658,7 +658,7 @@ async def update_user(
             detail="Non puoi disabilitare il tuo account"
         )
     
-    for key, value in user_data.dict(exclude_unset=True).items():
+    for key, value in user_data.model_dump(exclude_unset=True).items():
         setattr(target_user, key, value)
     
     log_audit(db, admin.id, "user_updated", "user",

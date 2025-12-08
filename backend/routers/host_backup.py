@@ -203,7 +203,7 @@ async def update_host_backup_job(
         raise HTTPException(status_code=404, detail="Job non trovato")
     
     # Aggiorna solo i campi forniti
-    update_data = job_data.dict(exclude_unset=True)
+    update_data = job_data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         if value is not None:
             setattr(job, key, value)

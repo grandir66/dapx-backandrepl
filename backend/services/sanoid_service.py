@@ -51,59 +51,103 @@ class SanoidService:
     ) -> Tuple[bool, str]:
         """Installa Sanoid su un nodo Proxmox/Debian"""
         
+        # Prima verifica se già installato (veloce)
+        check_result = await ssh_service.execute(
+            hostname=hostname,
+            command="command -v sanoid && sanoid --version 2>/dev/null",
+            port=port,
+            username=username,
+            key_path=key_path,
+            timeout=30
+        )
+        
+        if check_result.success and "sanoid" in check_result.stdout.lower():
+            return True, f"Sanoid già installato: {check_result.stdout.strip()}"
+        
         install_script = """
+#!/bin/bash
 set -e
 
-# Verifica se già installato
-if command -v sanoid &> /dev/null; then
-    echo "Sanoid già installato"
-    sanoid --version
-    exit 0
+echo "=== Installazione Sanoid ==="
+
+# Verifica connessione internet
+if ! ping -c 1 github.com &>/dev/null; then
+    echo "ERRORE: Nessuna connessione a internet"
+    exit 1
 fi
+
+# Metodo 1: Prova con apt (Debian/Ubuntu)
+echo "Tentativo installazione da repository..."
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+
+# Su alcune versioni Debian/Proxmox sanoid è disponibile nel repo
+if apt-cache show sanoid &>/dev/null; then
+    echo "Sanoid disponibile nel repository, installo..."
+    apt-get install -y -qq sanoid
+    if command -v sanoid &>/dev/null; then
+        echo "Installato da repository"
+        sanoid --version
+        mkdir -p /etc/sanoid
+        touch /etc/sanoid/sanoid.conf
+        exit 0
+    fi
+fi
+
+# Metodo 2: Installazione manuale
+echo "Installazione manuale..."
 
 # Installa dipendenze
-apt-get update
-apt-get install -y debhelper libcapture-tiny-perl libconfig-inifiles-perl pv lzop mbuffer
+apt-get install -y -qq debhelper libcapture-tiny-perl libconfig-inifiles-perl pv lzop mbuffer git build-essential 2>/dev/null || true
 
-# Clona e installa sanoid
+# Clona repository
 cd /tmp
-rm -rf sanoid
-git clone https://github.com/jimsalterjrs/sanoid.git
+rm -rf sanoid sanoid_*.deb 2>/dev/null || true
+timeout 120 git clone --depth 1 https://github.com/jimsalterjrs/sanoid.git || {
+    echo "ERRORE: Clone git fallito (timeout o rete)"
+    exit 1
+}
 cd sanoid
 
-# Checkout ultima release stabile
-LATEST_TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
-git checkout $LATEST_TAG
-
-# Build e install
-ln -sf packages/debian .
-dpkg-buildpackage -uc -us
-apt-get install -y ../sanoid_*.deb
-
-# Crea directory config se non esiste
-mkdir -p /etc/sanoid
-
-# Copia configurazione di default se non esiste
-if [ ! -f /etc/sanoid/sanoid.defaults.conf ]; then
-    cp /usr/share/sanoid/sanoid.defaults.conf /etc/sanoid/
+# Prova build con dpkg
+echo "Tentativo build pacchetto..."
+if [ -d "packages/debian" ]; then
+    ln -sf packages/debian . 2>/dev/null || true
+    if dpkg-buildpackage -uc -us -b 2>/dev/null; then
+        apt-get install -y ../sanoid_*.deb 2>/dev/null && {
+            echo "Installato con dpkg-buildpackage"
+            sanoid --version
+            mkdir -p /etc/sanoid
+            touch /etc/sanoid/sanoid.conf
+            rm -rf /tmp/sanoid /tmp/sanoid_*.deb 2>/dev/null || true
+            exit 0
+        }
+    fi
 fi
 
-# Crea config vuoto se non esiste
-if [ ! -f /etc/sanoid/sanoid.conf ]; then
-    touch /etc/sanoid/sanoid.conf
-    echo "# Sanoid configuration - managed by DAPX-backandrepl" > /etc/sanoid/sanoid.conf
-fi
-
-# Abilita timer systemd
-systemctl enable sanoid.timer
-systemctl start sanoid.timer
+# Metodo 3: Installazione diretta (fallback)
+echo "Installazione diretta..."
+mkdir -p /usr/local/sbin /etc/sanoid
+cp sanoid syncoid findoid sleepymutex /usr/local/sbin/ 2>/dev/null || cp sanoid syncoid /usr/local/sbin/
+chmod +x /usr/local/sbin/sanoid /usr/local/sbin/syncoid
+[ -f sanoid.defaults.conf ] && cp sanoid.defaults.conf /etc/sanoid/
+touch /etc/sanoid/sanoid.conf
+ln -sf /usr/local/sbin/sanoid /usr/sbin/sanoid 2>/dev/null || true
+ln -sf /usr/local/sbin/syncoid /usr/sbin/syncoid 2>/dev/null || true
 
 # Cleanup
 cd /
-rm -rf /tmp/sanoid /tmp/sanoid_*.deb /tmp/sanoid_*.buildinfo /tmp/sanoid_*.changes
+rm -rf /tmp/sanoid /tmp/sanoid_*.deb 2>/dev/null || true
 
-echo "Sanoid installato con successo"
-sanoid --version
+# Verifica finale
+if command -v sanoid &>/dev/null; then
+    echo "=== Sanoid installato con successo ==="
+    sanoid --version 2>/dev/null || echo "Versione: manual install"
+    exit 0
+else
+    echo "ERRORE: Installazione fallita"
+    exit 1
+fi
 """
         
         result = await ssh_service.execute(
@@ -112,7 +156,7 @@ sanoid --version
             port=port,
             username=username,
             key_path=key_path,
-            timeout=600
+            timeout=300  # 5 minuti dovrebbero bastare
         )
         
         return result.success, result.stdout + result.stderr

@@ -742,7 +742,7 @@ async def create_sync_job(
         job_name = f"{source_node.name} → {dest_node.name}: {source_ds_name}"
     
     # Crea job con nome (generato o fornito)
-    job_dict = job.dict()
+    job_dict = job.model_dump()
     job_dict['name'] = job_name
     db_job = SyncJob(**job_dict, created_by=user.id)
     db.add(db_job)
@@ -1068,7 +1068,7 @@ async def update_sync_job(
     if not check_job_access(user, job, db):
         raise HTTPException(status_code=403, detail="Accesso negato")
     
-    update_data = update.dict(exclude_unset=True)
+    update_data = update.model_dump(exclude_unset=True)
     changes = []
     
     # Valida e verifica accesso ai nuovi nodi se cambiati

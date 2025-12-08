@@ -348,7 +348,7 @@ async def update_dataset_config(
     if node and not check_node_access(user, node):
         raise HTTPException(status_code=403, detail="Accesso negato a questo nodo")
     
-    for key, value in config.dict().items():
+    for key, value in config.model_dump().items():
         setattr(dataset, key, value)
     
     dataset.last_updated = datetime.utcnow()

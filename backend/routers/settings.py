@@ -332,7 +332,7 @@ async def update_notification_config(
         config = NotificationConfig()
         db.add(config)
     
-    for key, value in update.dict(exclude_unset=True).items():
+    for key, value in update.model_dump(exclude_unset=True).items():
         setattr(config, key, value)
     
     config.updated_at = datetime.utcnow()
