@@ -227,20 +227,23 @@ async def run_update_process():
         log("Aggiornamento dipendenze Python...")
         backend_dir = os.path.join(INSTALL_DIR, "backend")
         
+        # Prima prova con --break-system-packages (Debian 12+)
         result = subprocess.run(
-            ["pip3", "install", "--no-cache-dir", "-r", "requirements.txt", "--upgrade"],
+            ["pip3", "install", "--no-cache-dir", "--break-system-packages", "-r", "requirements.txt", "--upgrade"],
             cwd=backend_dir,
             capture_output=True,
             text=True
         )
         if result.returncode != 0:
-            # Prova con pip
+            # Riprova senza --break-system-packages (versioni più vecchie)
             result = subprocess.run(
-                ["pip", "install", "--no-cache-dir", "-r", "requirements.txt", "--upgrade"],
+                ["pip3", "install", "--no-cache-dir", "-r", "requirements.txt", "--upgrade"],
                 cwd=backend_dir,
                 capture_output=True,
                 text=True
             )
+        if result.returncode != 0:
+            log(f"Warning dipendenze: {result.stderr[:200] if result.stderr else 'errore pip'}")
         
         log("Dipendenze aggiornate")
         
