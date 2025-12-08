@@ -112,6 +112,25 @@ class AuthConfigUpdate(BaseModel):
     auth_allow_local_fallback: Optional[bool] = True
 
 
+class ServerConfigUpdate(BaseModel):
+    port: Optional[int] = None
+    ssl_enabled: Optional[bool] = None
+
+
+class ServerConfigResponse(BaseModel):
+    port: int
+    ssl_enabled: bool
+    ssl_ready: bool
+    cert_exists: bool
+    key_exists: bool
+    restart_required: bool
+
+
+class DatabaseResetRequest(BaseModel):
+    confirm: bool = False
+    backup: bool = True  # Crea backup prima del reset
+
+
 # ============== Legacy Endpoints (compatibilità) ==============
 
 @router.get("/")
