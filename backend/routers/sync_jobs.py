@@ -373,7 +373,7 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
 # ============== Schemas ==============
 
 class SyncJobCreate(BaseModel):
-    name: str
+    name: Optional[str] = None  # Se non fornito, viene generato automaticamente
     source_node_id: int
     source_dataset: str
     dest_node_id: int
@@ -598,12 +598,22 @@ async def create_sync_job(
         if job.dest_node_id not in user.allowed_nodes:
             raise HTTPException(status_code=403, detail="Accesso negato al nodo destinazione")
     
-    db_job = SyncJob(**job.dict(), created_by=user.id)
+    # Genera nome automatico se non fornito o vuoto
+    job_name = job.name.strip() if job.name else ""
+    if not job_name:
+        # Estrai nome dataset (ultima parte del path)
+        source_ds_name = job.source_dataset.split('/')[-1] if '/' in job.source_dataset else job.source_dataset
+        job_name = f"{source_node.name} → {dest_node.name}: {source_ds_name}"
+    
+    # Crea job con nome (generato o fornito)
+    job_dict = job.dict()
+    job_dict['name'] = job_name
+    db_job = SyncJob(**job_dict, created_by=user.id)
     db.add(db_job)
     
     log_audit(
         db, user.id, "sync_job_created", "sync_job",
-        details=f"Created job: {job.name}",
+        details=f"Created job: {job_name}",
         ip_address=request.client.host if request.client else None
     )
     
