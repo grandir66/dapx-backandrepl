@@ -244,11 +244,28 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                 except Exception as e:
                     log_entry.message += f" | Errore registrazione VM: {str(e)}"
             
-            # Cleanup vecchie snapshot se retention configurata (solo per ZFS)
+            # Crea snapshot di retention e applica policy (solo per ZFS)
             if job.keep_snapshots and job.keep_snapshots > 0 and sync_method != SyncMethod.BTRFS_SEND.value:
                 try:
-                    # Lista snapshot syncoid sul dataset destinazione
-                    list_cmd = f"zfs list -t snapshot -o name -s creation {job.dest_dataset} 2>/dev/null | grep 'syncoid_' || true"
+                    # Crea una snapshot di retention con timestamp
+                    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                    retention_snap_name = f"retention_{timestamp}"
+                    create_snap_cmd = f"zfs snapshot {job.dest_dataset}@{retention_snap_name}"
+                    
+                    snap_result = await ssh_service.execute(
+                        hostname=dest_node.hostname,
+                        command=create_snap_cmd,
+                        port=dest_node.ssh_port,
+                        username=dest_node.ssh_user,
+                        key_path=dest_node.ssh_key_path,
+                        timeout=60
+                    )
+                    
+                    if snap_result.success:
+                        log_entry.message += f" | Snapshot retention creata: {retention_snap_name}"
+                    
+                    # Lista snapshot di retention sul dataset destinazione
+                    list_cmd = f"zfs list -t snapshot -o name -s creation {job.dest_dataset} 2>/dev/null | grep 'retention_' || true"
                     list_result = await ssh_service.execute(
                         hostname=dest_node.hostname,
                         command=list_cmd,
@@ -280,7 +297,7 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                                     deleted_count += 1
                             
                             if deleted_count > 0:
-                                log_entry.message += f" | Retention: eliminate {deleted_count} snapshot vecchie, mantenute {job.keep_snapshots}"
+                                log_entry.message += f" | Retention: eliminate {deleted_count} vecchie, mantenute {job.keep_snapshots}"
                 except Exception as retention_err:
                     log_entry.message += f" | Errore retention: {str(retention_err)[:50]}"
         else:
@@ -1248,8 +1265,8 @@ async def list_job_snapshots(
     if not dest_node:
         raise HTTPException(status_code=404, detail="Nodo destinazione non trovato")
     
-    # Lista snapshot sul dataset destinazione
-    cmd = f"zfs list -t snapshot -o name,creation,used,referenced -s creation -H {job.dest_dataset} 2>/dev/null || true"
+    # Lista snapshot sul dataset destinazione (syncoid_ e retention_)
+    cmd = f"zfs list -t snapshot -o name,creation,used,referenced -s creation -H {job.dest_dataset} 2>/dev/null | grep -E 'syncoid_|retention_' || true"
     
     result = await ssh_service.execute(
         hostname=dest_node.hostname,
