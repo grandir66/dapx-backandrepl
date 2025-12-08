@@ -891,32 +891,135 @@
             <div v-if="currentPage === 'dashboard'">
                 <div class="page-header">
                     <h1 class="page-title">📊 Dashboard Principale</h1>
-                    <p class="page-subtitle">Riepilogo job di replica, backup e log</p>
+                    <p class="page-subtitle">Riepilogo job di replica, backup, metriche nodi e log</p>
+                    <div style="display: flex; align-items: center; gap: 12px; margin-top: 12px;">
+                        <button class="btn btn-secondary btn-sm" @click="loadDashboardData(true)" :disabled="loading">
+                            🔄 Aggiorna Dati
+                        </button>
+                    </div>
                 </div>
                 
-                <!-- Summary Stats -->
+                <!-- Summary Stats - Job per Tipo -->
                 <div class="stats-grid">
                     <div class="stat-card">
-                        <div class="stat-label">Job Sincronia</div>
-                        <div class="stat-value">{{ syncJobs.length }}</div>
-                        <div class="stat-detail">Attivi: {{ syncJobs.filter(j => j.is_active).length }}</div>
+                        <div class="stat-label">Replica ZFS</div>
+                        <div class="stat-value">{{ jobStats?.replica_zfs || 0 }}</div>
+                        <div class="stat-detail">Job attivi</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-label">Recovery Jobs</div>
-                        <div class="stat-value">{{ recoveryJobs.length }}</div>
-                        <div class="stat-detail">Attivi: {{ recoveryJobs.filter(j => j.is_active).length }}</div>
+                        <div class="stat-label">Replica BTRFS</div>
+                        <div class="stat-value">{{ jobStats?.replica_btrfs || 0 }}</div>
+                        <div class="stat-detail">Job attivi</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-label">Nodi</div>
-                        <div class="stat-value">{{ nodes.length }}</div>
+                        <div class="stat-label">Backup PBS</div>
+                        <div class="stat-value">{{ jobStats?.backup_pbs || 0 }}</div>
+                        <div class="stat-detail">Job attivi</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Replica PBS</div>
+                        <div class="stat-value">{{ jobStats?.replica_pbs || 0 }}</div>
+                        <div class="stat-detail">Job attivi</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Migrazione</div>
+                        <div class="stat-value">{{ jobStats?.migration || 0 }}</div>
+                        <div class="stat-detail">Job attivi</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Totale Job</div>
+                        <div class="stat-value">{{ jobStats?.total || 0 }}</div>
                         <div class="stat-detail">
                             <a href="#" @click.prevent="currentPage = 'proxmox'" style="color: var(--accent-primary);">Vai a Proxmox →</a>
                         </div>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Log Recenti</div>
-                        <div class="stat-value">{{ recentLogs.length }}</div>
-                        <div class="stat-detail">Ultimi 50</div>
+                </div>
+                
+                <!-- Metriche Nodi -->
+                <div class="card" style="margin-top: 24px;">
+                    <div class="card-header">
+                        <h3 class="card-title">📊 Metriche Performance Nodi</h3>
+                        <button class="btn btn-sm btn-secondary" @click="loadNodesMetrics(true)" :disabled="loadingMetrics">🔄 Aggiorna</button>
+                    </div>
+                    <div class="card-body">
+                        <div v-if="nodesMetrics.length === 0 && !loadingMetrics" style="color: var(--text-secondary); text-align: center; padding: 20px;">
+                            Nessun nodo online o metriche non disponibili
+                        </div>
+                        <div v-else-if="loadingMetrics" style="text-align: center; padding: 20px; color: var(--text-secondary);">
+                            ⏳ Caricamento metriche...
+                        </div>
+                        <div v-else class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Nodo</th>
+                                        <th>CPU Usage</th>
+                                        <th>RAM Usage</th>
+                                        <th>Load Average</th>
+                                        <th>Network</th>
+                                        <th>Disk I/O</th>
+                                        <th>Azioni</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="metrics in nodesMetrics" :key="metrics.node_id">
+                                        <td><strong>{{ metrics.node_name }}</strong></td>
+                                        <td>
+                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                                <div style="flex: 1; background: var(--bg-secondary); border-radius: 4px; height: 20px; position: relative; overflow: hidden;">
+                                                    <div :style="`width: ${metrics.cpu?.usage_percent || 0}%; background: ${(metrics.cpu?.usage_percent || 0) > 80 ? 'var(--danger)' : (metrics.cpu?.usage_percent || 0) > 60 ? 'var(--warning)' : 'var(--accent-primary)'}; height: 100%; transition: width 0.3s;`"></div>
+                                                </div>
+                                                <span style="min-width: 50px; text-align: right;">{{ (metrics.cpu?.usage_percent || 0).toFixed(1) }}%</span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                                <div style="flex: 1; background: var(--bg-secondary); border-radius: 4px; height: 20px; position: relative; overflow: hidden;">
+                                                    <div :style="`width: ${metrics.memory?.usage_percent || 0}%; background: ${(metrics.memory?.usage_percent || 0) > 90 ? 'var(--danger)' : (metrics.memory?.usage_percent || 0) > 75 ? 'var(--warning)' : 'var(--accent-primary)'}; height: 100%; transition: width 0.3s;`"></div>
+                                                </div>
+                                                <span style="min-width: 50px; text-align: right;">{{ (metrics.memory?.usage_percent || 0).toFixed(1) }}%</span>
+                                            </div>
+                                            <div style="font-size: 0.85em; color: var(--text-secondary); margin-top: 4px;">
+                                                {{ (metrics.memory?.used_gb || 0).toFixed(1) }} / {{ (metrics.memory?.total_gb || 0).toFixed(1) }} GB
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span style="font-family: monospace; font-size: 0.9em;">
+                                                {{ (metrics.cpu?.load_1min || 0).toFixed(2) }} / {{ (metrics.cpu?.load_5min || 0).toFixed(2) }} / {{ (metrics.cpu?.load_15min || 0).toFixed(2) }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div v-if="metrics.network?.interfaces && metrics.network.interfaces.length > 0">
+                                                <div v-for="iface in metrics.network.interfaces" :key="iface.name">
+                                                    <div style="font-size: 0.85em;"><strong>{{ iface.name }}</strong></div>
+                                                    <div style="font-size: 0.8em; color: var(--text-secondary);">
+                                                        ↓ {{ formatSize(iface.rx_bytes) }} / ↑ {{ formatSize(iface.tx_bytes) }}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <span v-else style="color: var(--text-secondary);">N/A</span>
+                                        </td>
+                                        <td>
+                                            <div v-if="metrics.disk">
+                                                <div style="font-size: 0.85em;">
+                                                    R: {{ formatSize(metrics.disk.io_read_bytes) }}
+                                                </div>
+                                                <div style="font-size: 0.85em;">
+                                                    W: {{ formatSize(metrics.disk.io_write_bytes) }}
+                                                </div>
+                                                <div style="font-size: 0.8em; color: var(--text-secondary);">
+                                                    Ops: {{ metrics.disk.io_read_ops }} / {{ metrics.disk.io_write_ops }}
+                                                </div>
+                                            </div>
+                                            <span v-else style="color: var(--text-secondary);">N/A</span>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-secondary btn-sm" @click="viewNodeDetails(metrics.node_id)">Dettagli</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
                 
@@ -1040,7 +1143,7 @@
                         <button class="btn btn-sm btn-secondary" @click="currentPage = 'logs'">Vedi tutti →</button>
                     </div>
                     <div class="card-body">
-                        <div v-if="recentLogs.length === 0" style="color: var(--text-secondary); text-align: center; padding: 20px;">
+                        <div v-if="dashboardRecentLogs.length === 0" style="color: var(--text-secondary); text-align: center; padding: 20px;">
                             Nessun log disponibile
                         </div>
                         <div v-else class="table-container">
@@ -1050,18 +1153,20 @@
                                         <th>Data/Ora</th>
                                         <th>Job</th>
                                         <th>Tipo</th>
+                                        <th>Nodo</th>
                                         <th>Stato</th>
                                         <th>Durata</th>
                                         <th>Azioni</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="log in recentLogs.slice(0, 10)" :key="log.id">
+                                    <tr v-for="log in dashboardRecentLogs.slice(0, 10)" :key="log.id">
                                         <td>{{ formatDate(log.started_at) }}</td>
                                         <td><strong>{{ log.job_name || 'N/A' }}</strong></td>
                                         <td>
                                             <span class="badge badge-info">{{ log.job_type || 'N/A' }}</span>
                                         </td>
+                                        <td>{{ log.node_name || 'N/A' }}</td>
                                         <td>
                                             <span class="badge" :class="getStatusClass(log.status)">
                                                 {{ log.status || 'N/A' }}
@@ -1072,12 +1177,12 @@
                                             <span v-else style="color: var(--text-secondary);">-</span>
                                         </td>
                                         <td>
-                                            <button class="btn btn-secondary btn-sm" @click="showLogDetail(log)">Dettagli</button>
+                                            <button class="btn btn-secondary btn-sm" @click="currentPage = 'logs'">Vedi Dettagli</button>
                                         </td>
                                     </tr>
                                 </tbody>
                             </table>
-                            <div v-if="recentLogs.length > 10" style="text-align: center; padding: 12px; color: var(--text-secondary);">
+                            <div v-if="dashboardRecentLogs.length > 10" style="text-align: center; padding: 12px; color: var(--text-secondary);">
                                 <button class="btn btn-sm btn-secondary" @click="currentPage = 'logs'">Vedi tutti i log →</button>
                             </div>
                         </div>
@@ -1128,14 +1233,15 @@
                     </div>
                 </div>
                 
-                <div v-else-if="loading" style="text-align: center; padding: 40px; color: var(--text-secondary);">
-                    ⏳ Caricamento dati...
+                <div v-else-if="loadingDashboardOverview" style="text-align: center; padding: 40px; color: var(--text-secondary);">
+                    ⏳ Caricamento overview...
                 </div>
                 
                 <!-- Tabella Nodi -->
                 <div class="card" style="margin-top: 24px;">
                     <div class="card-header">
                         <h3 class="card-title">🖥️ Nodi Proxmox</h3>
+                        <span v-if="loadingDashboardNodes" style="color: var(--text-secondary); font-size: 0.9em;">⏳ Caricamento...</span>
                     </div>
                     <div class="table-container">
                         <table>
@@ -1208,8 +1314,13 @@
                                         <button class="btn btn-secondary btn-sm" @click="viewNodeDetails(node.id)">Dettagli</button>
                                     </td>
                                 </tr>
-                                <tr v-if="dashboardNodes.length === 0 && !loading">
+                                <tr v-if="dashboardNodes.length === 0 && !loadingDashboardNodes">
                                     <td colspan="10" style="text-align: center; color: var(--text-secondary);">Nessun nodo configurato</td>
+                                </tr>
+                                <tr v-if="loadingDashboardNodes">
+                                    <td colspan="10" style="text-align: center; color: var(--text-secondary); padding: 20px;">
+                                        ⏳ Caricamento nodi...
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1220,6 +1331,7 @@
                 <div class="card" style="margin-top: 24px;">
                     <div class="card-header">
                         <h3 class="card-title">🖥️ VM Aggregate</h3>
+                        <span v-if="loadingDashboardVMs" style="color: var(--text-secondary); font-size: 0.9em;">⏳ Caricamento...</span>
                     </div>
                     <div class="table-container">
                         <table>
@@ -1275,8 +1387,13 @@
                                         <button class="btn btn-secondary btn-sm" @click="viewVMDetails(vm.node_id, vm.vmid, vm.type)">Dettagli</button>
                                     </td>
                                 </tr>
-                                <tr v-if="dashboardVMs.length === 0 && !loading">
+                                <tr v-if="dashboardVMs.length === 0 && !loadingDashboardVMs">
                                     <td colspan="11" style="text-align: center; color: var(--text-secondary);">Nessuna VM trovata</td>
+                                </tr>
+                                <tr v-if="loadingDashboardVMs">
+                                    <td colspan="11" style="text-align: center; color: var(--text-secondary); padding: 20px;">
+                                        ⏳ Caricamento VM...
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
@@ -5996,6 +6113,18 @@
                 const dashboardVMs = ref([]);
                 const dashboardDataFromCache = ref(false);
                 
+                // Dashboard loading states (per caricamento asincrono)
+                const loadingDashboardOverview = ref(false);
+                const loadingDashboardNodes = ref(false);
+                const loadingDashboardVMs = ref(false);
+                
+                // Dashboard job stats e metriche
+                const jobStats = ref(null);
+                const nodesMetrics = ref([]);
+                const dashboardRecentLogs = ref([]);
+                const loadingJobStats = ref(false);
+                const loadingMetrics = ref(false);
+                
                 // Detail pages data
                 const selectedNodeDetail = ref(null);
                 const selectedVMDetail = ref(null);
@@ -7324,50 +7453,119 @@
                     }
                 };
                 
-                const loadDashboard = async (forceRefresh = false) => {
+                // Carica dashboard data in modo asincrono (ogni sezione si popola indipendentemente)
+                const loadDashboardOverview = async () => {
+                    loadingDashboardOverview.value = true;
+                    try {
+                        const overviewRes = await axios.get(`${API}/dashboard/overview`);
+                        dashboardOverview.value = overviewRes.data;
+                        // Estrai job stats e recent logs dall'overview se presenti
+                        if (overviewRes.data.job_stats) {
+                            jobStats.value = overviewRes.data.job_stats;
+                        }
+                        if (overviewRes.data.recent_logs) {
+                            dashboardRecentLogs.value = overviewRes.data.recent_logs;
+                        }
+                        saveDashboardToStorage();
+                    } catch (error) {
+                        console.error('Errore caricamento overview:', error);
+                    } finally {
+                        loadingDashboardOverview.value = false;
+                    }
+                };
+                
+                const loadDashboardNodes = async () => {
+                    loadingDashboardNodes.value = true;
+                    try {
+                        const nodesRes = await axios.get(`${API}/dashboard/nodes`);
+                        dashboardNodes.value = nodesRes.data;
+                        saveDashboardToStorage();
+                    } catch (error) {
+                        console.error('Errore caricamento nodes:', error);
+                    } finally {
+                        loadingDashboardNodes.value = false;
+                    }
+                };
+                
+                const loadDashboardVMs = async () => {
+                    loadingDashboardVMs.value = true;
+                    try {
+                        const vmsRes = await axios.get(`${API}/dashboard/vms`);
+                        dashboardVMs.value = vmsRes.data;
+                        saveDashboardToStorage();
+                    } catch (error) {
+                        console.error('Errore caricamento VMs:', error);
+                    } finally {
+                        loadingDashboardVMs.value = false;
+                    }
+                };
+                
+                const loadJobStats = async () => {
+                    loadingJobStats.value = true;
+                    try {
+                        const res = await axios.get(`${API}/dashboard/job-stats`);
+                        jobStats.value = res.data;
+                    } catch (error) {
+                        console.error('Errore caricamento job stats:', error);
+                    } finally {
+                        loadingJobStats.value = false;
+                    }
+                };
+                
+                const loadNodesMetrics = async (force = false) => {
+                    if (loadingMetrics.value && !force) return;
+                    loadingMetrics.value = true;
+                    try {
+                        const res = await axios.get(`${API}/dashboard/nodes-metrics`);
+                        nodesMetrics.value = res.data || [];
+                    } catch (error) {
+                        console.error('Errore caricamento metriche:', error);
+                        nodesMetrics.value = [];
+                    } finally {
+                        loadingMetrics.value = false;
+                    }
+                };
+                
+                const loadDashboardData = async (forceRefresh = false) => {
                     // Carica da localStorage se disponibile e non è un refresh forzato
                     if (!forceRefresh && loadDashboardFromStorage()) {
-                        // Carica comunque jobs e log (non vengono salvati in cache)
-                        await Promise.all([loadSyncJobs(), loadRecoveryJobs(), loadLogs()]);
+                        // Carica comunque jobs, stats e log in background (non vengono salvati in cache)
+                        Promise.all([
+                            loadSyncJobs(), 
+                            loadRecoveryJobs(), 
+                            loadLogs(),
+                            loadJobStats(),
+                            loadNodesMetrics()
+                        ]).catch(e => console.error('Errore caricamento dati background:', e));
                         return;
                     }
                     
-                    loading.value = true;
-                    try {
-                        // Load overview
-                        const overviewRes = await axios.get(`${API}/dashboard/overview`);
-                        dashboardOverview.value = overviewRes.data;
-                        
-                        // Load nodes
-                        const nodesRes = await axios.get(`${API}/dashboard/nodes`);
-                        console.log('Dashboard nodes response:', nodesRes.data);
-                        dashboardNodes.value = nodesRes.data;
-                        
-                        // Load VMs
-                        const vmsRes = await axios.get(`${API}/dashboard/vms`);
-                        dashboardVMs.value = vmsRes.data;
-                        
-                        // Load jobs and logs (non vengono salvati in cache)
-                        await Promise.all([loadSyncJobs(), loadRecoveryJobs(), loadLogs()]);
-                        
-                        // Salva in localStorage
-                        saveDashboardToStorage();
-                        dashboardDataFromCache.value = false;
-                    } catch (error) {
-                        console.error('Errore caricamento dashboard:', error);
-                        showToast('Errore caricamento dashboard', 'error');
-                        // Se c'è un errore, prova a caricare da storage
-                        if (!loadDashboardFromStorage()) {
-                            showToast('Nessun dato disponibile in cache', 'warning');
-                        }
-                        // Prova comunque a caricare jobs e log
-                        try {
-                            await Promise.all([loadSyncJobs(), loadRecoveryJobs(), loadLogs()]);
-                        } catch (e) {
-                            console.error('Errore caricamento jobs/logs:', e);
-                        }
-                    }
-                    loading.value = false;
+                    // Reset dati
+                    dashboardOverview.value = null;
+                    dashboardNodes.value = [];
+                    dashboardVMs.value = [];
+                    dashboardDataFromCache.value = false;
+                    
+                    // Carica tutti i dati in parallelo (asincrono)
+                    // Ogni sezione si popolerà man mano che i dati arrivano
+                    Promise.all([
+                        loadDashboardOverview(),
+                        loadDashboardNodes(),
+                        loadDashboardVMs(),
+                        loadSyncJobs(),
+                        loadRecoveryJobs(),
+                        loadLogs(),
+                        loadJobStats(),
+                        loadNodesMetrics()
+                    ]).catch(e => {
+                        console.error('Errore caricamento dashboard:', e);
+                        showToast('Alcuni dati potrebbero non essere disponibili', 'warning');
+                    });
+                };
+                
+                // Mantieni loadDashboard per compatibilità con codice esistente
+                const loadDashboard = async (forceRefresh = false) => {
+                    await loadDashboardData(forceRefresh);
                 };
                 
                 const loadNodeDetails = async (nodeId) => {
@@ -9279,9 +9477,13 @@
                 
                 // Watch currentPage to load dashboard when navigating
                 watch(currentPage, (newPage) => {
-                    if (newPage === 'proxmox') {
-                        // Carica dati Proxmox da localStorage, non forzare refresh
-                        loadDashboard(false);
+                    if (newPage === 'dashboard') {
+                        // Carica job stats e metriche per la dashboard principale
+                        loadJobStats();
+                        loadNodesMetrics();
+                    } else if (newPage === 'proxmox') {
+                        // Carica dati Proxmox in modo asincrono (ogni sezione si popola indipendentemente)
+                        loadDashboardData(false);
                     } else if (newPage === 'backup') {
                         loadBackupJobs();
                         loadNodes();
@@ -9326,9 +9528,14 @@
                     
                     if (checkAuth()) {
                         await loadAllData();
-                        // Load Proxmox dashboard if on proxmox page (da localStorage)
+                        // Load Proxmox dashboard if on proxmox page (da localStorage, asincrono)
                         if (currentPage.value === 'proxmox') {
-                            await loadDashboard(false);
+                            loadDashboardData(false);
+                        }
+                        // Carica anche job stats e metriche per la dashboard principale
+                        if (currentPage.value === 'dashboard') {
+                            loadJobStats();
+                            loadNodesMetrics();
                         }
                     } else {
                         await checkSetup();
@@ -9373,6 +9580,8 @@
                     showSnapshotModal, snapshotTab, snapshotModalData,
                     // Dashboard
                     dashboardOverview, dashboardNodes, dashboardVMs, dashboardDataFromCache,
+                    loadingDashboardOverview, loadingDashboardNodes, loadingDashboardVMs,
+                    jobStats, nodesMetrics, dashboardRecentLogs, loadingJobStats, loadingMetrics,
                     selectedNodeDetail, selectedVMDetail, loadingNodeDetail, loadingVMDetail,
                     newNode, newSyncJob, newUser,
                     // Schedule presets
@@ -9384,7 +9593,9 @@
                     showVmBackups, startRestoreFromVmBackup,
                     loadSourceDatasets, loadDestDatasets, onDestNodeChange, updateDestDataset, checkSyncJobCompatibility, applySchedule, showLogDetail,
                     // Dashboard functions
-                    loadDashboard, loadNodeDetails, loadVMDetails, viewNodeDetails, viewVMDetails,
+                    loadDashboard, loadDashboardData, loadDashboardOverview, loadDashboardNodes, loadDashboardVMs,
+                    loadJobStats, loadNodesMetrics,
+                    loadNodeDetails, loadVMDetails, viewNodeDetails, viewVMDetails,
                     // VM Replica functions
                     loadSourceVMs, loadDestPools, selectVMForReplica, cancelVMReplica, createVMReplica, openReplicaWizardModal, closeReplicaWizardModal,
                     runVMGroup, deleteVMGroup, registerVMGroup,
