@@ -4372,7 +4372,7 @@
                     <div style="display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 2px solid var(--border-color);">
                         <button class="btn" :class="vmSnapshotTab === 'snapshots' ? 'btn-primary' : 'btn-secondary'" 
                                 @click="vmSnapshotTab = 'snapshots'" style="border-radius: 8px 8px 0 0;">
-                            📸 Snapshot ({{ (vmSnapshotData.proxmoxTotal || 0) + (vmSnapshotData.sanoidTotal || 0) + (vmSnapshotData.syncoidTotal || 0) }})
+                            📸 Snapshot ({{ (vmSnapshotData.proxmoxTotal || 0) + (vmSnapshotData.sanoidTotal || 0) + (vmSnapshotData.syncoidTotal || 0) + (vmSnapshotData.backupTotal || 0) }})
                         </button>
                         <button class="btn" :class="vmSnapshotTab === 'config' ? 'btn-primary' : 'btn-secondary'" 
                                 @click="vmSnapshotTab = 'config'" style="border-radius: 8px 8px 0 0;">
@@ -4387,7 +4387,7 @@
                             <p style="margin-top: 16px;">Caricamento snapshot...</p>
                         </div>
                         
-                        <div v-else-if="(vmSnapshotData.proxmoxTotal || 0) === 0 && (vmSnapshotData.sanoidTotal || 0) === 0 && (vmSnapshotData.syncoidTotal || 0) === 0" 
+                        <div v-else-if="(vmSnapshotData.proxmoxTotal || 0) === 0 && (vmSnapshotData.sanoidTotal || 0) === 0 && (vmSnapshotData.syncoidTotal || 0) === 0 && (vmSnapshotData.backupTotal || 0) === 0" 
                              style="text-align: center; padding: 40px; color: var(--text-secondary);">
                             <p>Nessuno snapshot trovato per questa VM</p>
                         </div>
@@ -4454,6 +4454,47 @@
                                             <tr v-for="snap in vmSnapshotData.sanoidSnapshots" :key="snap.full_name">
                                                 <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">{{ snap.dataset.split('/').pop() }}</td>
                                                 <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--accent-secondary);">
+                                                    {{ snap.snapshot }}
+                                                </td>
+                                                <td>{{ snap.used }}</td>
+                                                <td>{{ snap.creation }}</td>
+                                                <td>
+                                                    <button class="btn btn-danger btn-sm" @click="rollbackToSnapshot(snap)" :disabled="loading" title="Rollback (distruttivo!)">
+                                                        🔄 Rollback
+                                                    </button>
+                                                    <button class="btn btn-secondary btn-sm" @click="cloneSnapshot(snap)" :disabled="loading" title="Crea clone" style="margin-left: 4px;">
+                                                        📋 Clone
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <!-- Snapshot Backup (retention) -->
+                            <div v-if="vmSnapshotData.backupSnapshots && vmSnapshotData.backupSnapshots.length > 0" style="margin-bottom: 30px;">
+                                <h4 style="color: #9c27b0; margin-bottom: 12px;">
+                                    💾 Snapshot Backup ({{ vmSnapshotData.backupTotal || 0 }})
+                                </h4>
+                                <small style="color: var(--text-secondary); display: block; margin-bottom: 8px;">
+                                    Snapshot di retention create per mantenere versioni multiple
+                                </small>
+                                <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Dataset</th>
+                                                <th>Snapshot</th>
+                                                <th>Dimensione</th>
+                                                <th>Data Creazione</th>
+                                                <th>Azioni</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="snap in vmSnapshotData.backupSnapshots" :key="snap.full_name">
+                                                <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">{{ snap.dataset.split('/').pop() }}</td>
+                                                <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #9c27b0;">
                                                     {{ snap.snapshot }}
                                                 </td>
                                                 <td>{{ snap.used }}</td>
@@ -7876,6 +7917,8 @@
                         sanoidSnapshots: [],
                         syncoidTotal: 0,
                         syncoidSnapshots: [],
+                        backupTotal: 0,
+                        backupSnapshots: [],
                         loading: true
                     };
                     vmSnapshotTab.value = 'snapshots';
@@ -7908,6 +7951,12 @@
                         if (res.data.syncoid_snapshots) {
                             vmSnapshotData.value.syncoidTotal = res.data.syncoid_snapshots.length || 0;
                             vmSnapshotData.value.syncoidSnapshots = res.data.syncoid_snapshots || [];
+                        }
+                        
+                        // Snapshot Backup
+                        if (res.data.backup_snapshots) {
+                            vmSnapshotData.value.backupTotal = res.data.backup_snapshots.length || 0;
+                            vmSnapshotData.value.backupSnapshots = res.data.backup_snapshots || [];
                         }
                         
                         vmSnapshotData.value.total = res.data.total || 0;

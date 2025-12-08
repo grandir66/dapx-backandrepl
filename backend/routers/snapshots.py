@@ -714,6 +714,8 @@ async def get_vm_all_snapshots(
     
     sanoid_snapshots = []
     syncoid_snapshots = []
+    backup_snapshots = []
+    
     if datasets_resp and datasets_resp.datasets:
         for dataset in datasets_resp.datasets:
             snaps = await ssh_service.get_snapshots(
@@ -732,6 +734,35 @@ async def get_vm_all_snapshots(
                 elif 'syncoid_' in snap_name:
                     snap['source'] = 'syncoid'
                     syncoid_snapshots.append(snap)
+                elif 'backup_' in snap_name:
+                    snap['source'] = 'backup'
+                    backup_snapshots.append(snap)
+    
+    # Fallback: se non troviamo dataset ma ci sono snapshot con pattern vm-XXX, cercale comunque
+    if not datasets_resp or not datasets_resp.datasets:
+        # Cerca tutti gli snapshot che potrebbero essere associati alla VM
+        all_snapshots = await ssh_service.get_snapshots(
+            hostname=node.hostname,
+            port=node.ssh_port,
+            username=node.ssh_user,
+            key_path=node.ssh_key_path
+        )
+        
+        # Cerca pattern vm-XXX- o vm-XXX/ nel dataset
+        vm_pattern = f"vm-{vm_id}-"
+        for snap in all_snapshots:
+            dataset = snap.get('dataset', '')
+            if vm_pattern in dataset or f"/{vm_id}/" in dataset:
+                snap_name = snap.get('snapshot', '')
+                if 'autosnap_' in snap_name:
+                    snap['source'] = 'sanoid'
+                    sanoid_snapshots.append(snap)
+                elif 'syncoid_' in snap_name:
+                    snap['source'] = 'syncoid'
+                    syncoid_snapshots.append(snap)
+                elif 'backup_' in snap_name:
+                    snap['source'] = 'backup'
+                    backup_snapshots.append(snap)
     
     return {
         "vm_id": vm_id,
@@ -739,5 +770,6 @@ async def get_vm_all_snapshots(
         "proxmox_snapshots": proxmox_snaps,
         "sanoid_snapshots": sanoid_snapshots,
         "syncoid_snapshots": syncoid_snapshots,
-        "total": proxmox_snaps.get("total_snapshots", 0) + len(sanoid_snapshots) + len(syncoid_snapshots)
+        "backup_snapshots": backup_snapshots,
+        "total": proxmox_snaps.get("total_snapshots", 0) + len(sanoid_snapshots) + len(syncoid_snapshots) + len(backup_snapshots)
     }

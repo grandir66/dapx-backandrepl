@@ -265,6 +265,8 @@ class ProxmoxService:
         datasets = []
         
         for storage, disk_name in disks:
+            dataset_found = False
+            
             # Trova il path ZFS dello storage
             result = await ssh_service.execute(
                 hostname=hostname,
@@ -290,6 +292,7 @@ class ProxmoxService:
                     if path.startswith("/dev/zvol/"):
                         dataset = path.replace("/dev/zvol/", "")
                         datasets.append(dataset)
+                        dataset_found = True
                     elif path.startswith("/"):
                         # Potrebbe essere un dataset montato
                         result3 = await ssh_service.execute(
@@ -301,6 +304,22 @@ class ProxmoxService:
                         )
                         if result3.success:
                             datasets.append(result3.stdout.strip())
+                            dataset_found = True
+            
+            # Fallback: se lo storage non è registrato o non trovato, cerca direttamente il dataset ZFS
+            if not dataset_found:
+                # Cerca dataset che corrispondono al nome del disco (es: vm-667-disk-0)
+                result_fallback = await ssh_service.execute(
+                    hostname=hostname,
+                    command=f"zfs list -H -o name 2>/dev/null | grep -E '{disk_name}$|/{disk_name}$' | head -5",
+                    port=port,
+                    username=username,
+                    key_path=key_path
+                )
+                if result_fallback.success and result_fallback.stdout.strip():
+                    for line in result_fallback.stdout.strip().split('\n'):
+                        if line.strip() and line.strip() not in datasets:
+                            datasets.append(line.strip())
         
         # Aggiungi anche il parent dataset se esiste (es: rpool/data)
         if datasets:
