@@ -10,7 +10,7 @@ from datetime import datetime
 from pydantic import BaseModel
 import logging
 
-from database import get_db, Node, Dataset, User, JobLog, VMSnapshotConfig
+from database import get_db, Node, Dataset, User, JobLog, VMSnapshotConfig, SyncJob
 from services.ssh_service import ssh_service
 from services.sanoid_service import sanoid_service, DEFAULT_TEMPLATES
 from routers.auth import get_current_user, require_operator, log_audit
@@ -720,45 +720,56 @@ async def get_vm_all_snapshots(
     
     if datasets_resp and datasets_resp.datasets:
         for dataset in datasets_resp.datasets:
-            datasets_to_check.add(dataset)
+            datasets_to_check.add((dataset, node_id))  # (dataset, node_id)
             
             # Se il dataset è una replica (es: zfs/replica/vm-667-disk-0), cerca anche sul dataset originale
             if '/replica/' in dataset:
                 original_dataset = dataset.replace('/replica/', '/')
-                datasets_to_check.add(original_dataset)
+                datasets_to_check.add((original_dataset, node_id))
             elif dataset.startswith('replica/'):
                 original_dataset = dataset.replace('replica/', '')
-                datasets_to_check.add(original_dataset)
+                datasets_to_check.add((original_dataset, node_id))
+            
+            # Cerca job di replica che hanno questo dataset come destinazione (replica verso questo dataset)
+            replica_jobs_dest = db.query(SyncJob).filter(
+                SyncJob.dest_dataset == dataset
+            ).all()
+            
+            for job in replica_jobs_dest:
+                # Aggiungi il dataset di destinazione del job (è quello che stiamo già controllando)
+                datasets_to_check.add((job.dest_dataset, job.dest_node_id))
+                # Aggiungi anche il dataset sorgente (per vedere snapshot originali)
+                datasets_to_check.add((job.source_dataset, job.source_node_id))
+            
+            # Cerca anche job che replicano DA questo dataset (per trovare la destinazione)
+            replica_jobs_source = db.query(SyncJob).filter(
+                SyncJob.source_dataset == dataset
+            ).all()
+            
+            for job in replica_jobs_source:
+                # Aggiungi il dataset di destinazione (dove sono le snapshot della replica)
+                datasets_to_check.add((job.dest_dataset, job.dest_node_id))
+                # Aggiungi anche il dataset sorgente (quello che stiamo già controllando)
+                datasets_to_check.add((job.source_dataset, job.source_node_id))
     
     # Cerca snapshot su tutti i dataset trovati (inclusi quelli originali se replica)
-    for dataset in datasets_to_check:
-        # Prova prima sul nodo corrente
-        snaps = await ssh_service.get_snapshots(
-            hostname=node.hostname,
-            dataset=dataset,
-            port=node.ssh_port,
-            username=node.ssh_user,
-            key_path=node.ssh_key_path
-        )
+    for dataset, check_node_id in datasets_to_check:
+        # Determina il nodo su cui cercare
+        if check_node_id == node_id:
+            check_node = node
+        else:
+            check_node = db.query(Node).filter(Node.id == check_node_id).first()
+            if not check_node:
+                continue
         
-        # Se non trova snapshot e il dataset è originale, cerca anche su altri nodi
-        if not snaps and '/replica/' not in dataset and not dataset.startswith('replica/'):
-            # Cerca su tutti i nodi PVE
-            all_nodes = db.query(Node).filter(Node.node_type == "pve").all()
-            for other_node in all_nodes:
-                if other_node.id == node_id:
-                    continue  # Già controllato
-                
-                other_snaps = await ssh_service.get_snapshots(
-                    hostname=other_node.hostname,
-                    dataset=dataset,
-                    port=other_node.ssh_port,
-                    username=other_node.ssh_user,
-                    key_path=other_node.ssh_key_path
-                )
-                if other_snaps:
-                    snaps = other_snaps
-                    break  # Usa il primo nodo che trova snapshot
+        # Cerca snapshot sul nodo specificato
+        snaps = await ssh_service.get_snapshots(
+            hostname=check_node.hostname,
+            dataset=dataset,
+            port=check_node.ssh_port,
+            username=check_node.ssh_user,
+            key_path=check_node.ssh_key_path
+        )
         
         # Filtra snapshot per tipo (include tutte le snapshot del dataset)
         for snap in snaps:
@@ -782,9 +793,59 @@ async def get_vm_all_snapshots(
                 snap['source'] = 'backup'
                 backup_snapshots.append(snap)
     
-    # Fallback: se non troviamo dataset ma ci sono snapshot con pattern vm-XXX, cercale comunque
+    # Fallback: se non troviamo dataset, cerca job di replica che potrebbero essere associati
     if not datasets_resp or not datasets_resp.datasets:
-        # Cerca tutti gli snapshot che potrebbero essere associati alla VM
+        # Cerca job di replica che potrebbero essere associati a questa VM
+        # Cerca pattern nel nome del dataset (es: vm-710 o vm-667)
+        vm_pattern = f"vm-{vm_id}"
+        all_sync_jobs = db.query(SyncJob).filter(
+            (SyncJob.source_dataset.like(f"%{vm_pattern}%")) |
+            (SyncJob.dest_dataset.like(f"%{vm_pattern}%"))
+        ).all()
+        
+        for job in all_sync_jobs:
+            # Aggiungi entrambi i dataset del job
+            datasets_to_check.add((job.source_dataset, job.source_node_id))
+            datasets_to_check.add((job.dest_dataset, job.dest_node_id))
+        
+        # Cerca snapshot su tutti i dataset trovati dai job
+        for dataset, check_node_id in datasets_to_check:
+            if check_node_id == node_id:
+                check_node = node
+            else:
+                check_node = db.query(Node).filter(Node.id == check_node_id).first()
+                if not check_node:
+                    continue
+            
+            snaps = await ssh_service.get_snapshots(
+                hostname=check_node.hostname,
+                dataset=dataset,
+                port=check_node.ssh_port,
+                username=check_node.ssh_user,
+                key_path=check_node.ssh_key_path
+            )
+            
+            for snap in snaps:
+                snap_full_name = snap.get('full_name', '')
+                if snap_full_name in seen_snapshots:
+                    continue
+                seen_snapshots.add(snap_full_name)
+                
+                snap_name = snap.get('snapshot', '')
+                if 'autosnap_' in snap_name:
+                    snap['source'] = 'sanoid'
+                    sanoid_snapshots.append(snap)
+                elif 'syncoid_' in snap_name:
+                    snap['source'] = 'syncoid'
+                    syncoid_snapshots.append(snap)
+                elif 'backup_' in snap_name:
+                    snap['source'] = 'backup'
+                    backup_snapshots.append(snap)
+                else:
+                    snap['source'] = 'backup'
+                    backup_snapshots.append(snap)
+        
+        # Fallback finale: cerca pattern vm-XXX- direttamente
         all_snapshots = await ssh_service.get_snapshots(
             hostname=node.hostname,
             port=node.ssh_port,
@@ -792,11 +853,15 @@ async def get_vm_all_snapshots(
             key_path=node.ssh_key_path
         )
         
-        # Cerca pattern vm-XXX- o vm-XXX/ nel dataset
         vm_pattern = f"vm-{vm_id}-"
         for snap in all_snapshots:
             dataset = snap.get('dataset', '')
             if vm_pattern in dataset or f"/{vm_id}/" in dataset:
+                snap_full_name = snap.get('full_name', '')
+                if snap_full_name in seen_snapshots:
+                    continue
+                seen_snapshots.add(snap_full_name)
+                
                 snap_name = snap.get('snapshot', '')
                 if 'autosnap_' in snap_name:
                     snap['source'] = 'sanoid'
