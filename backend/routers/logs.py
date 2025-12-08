@@ -20,19 +20,20 @@ router = APIRouter()
 class JobLogResponse(BaseModel):
     id: int
     job_type: str
-    job_id: Optional[int]
-    node_name: Optional[str]
-    dataset: Optional[str]
+    job_id: Optional[int] = None
+    node_name: Optional[str] = None
+    dataset: Optional[str] = None
     status: str
-    message: Optional[str]
-    output: Optional[str]
-    error: Optional[str]
-    duration: Optional[int]
-    transferred: Optional[str]
-    attempt_number: int
+    message: Optional[str] = None
+    output: Optional[str] = None
+    error: Optional[str] = None
+    duration: Optional[int] = None
+    transferred: Optional[str] = None
+    attempt_number: Optional[int] = 1
     started_at: datetime
-    completed_at: Optional[datetime]
-    triggered_by: Optional[int]
+    completed_at: Optional[datetime] = None
+    triggered_by: Optional[int] = None
+    backup_id: Optional[str] = None
     
     class Config:
         from_attributes = True
