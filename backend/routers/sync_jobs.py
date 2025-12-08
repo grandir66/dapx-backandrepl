@@ -166,45 +166,30 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                     else:
                         log_entry.message = f"Attenzione: impossibile creare {dest_parent}: {create_result.stderr}"
             
-            # Se retention configurata, usa sanoid per gestire snapshot
-            use_sanoid = job.keep_snapshots and job.keep_snapshots > 0
+            # Se retention configurata, crea snapshot manuale prima del sync
+            use_retention = job.keep_snapshots and job.keep_snapshots > 0
+            retention_snap_name = None
             
-            if use_sanoid:
-                from services.sanoid_config_service import sanoid_config_service
+            if use_retention:
+                # Crea snapshot manuale con timestamp univoco su sorgente
+                timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H:%M:%S")
+                retention_snap_name = f"backup_{timestamp}"
+                full_snap = f"{job.source_dataset}@{retention_snap_name}"
                 
-                # Configura sanoid su sorgente (autosnap=yes)
-                await sanoid_config_service.add_dataset_config(
+                create_snap_cmd = f"zfs snapshot {full_snap}"
+                snap_result = await ssh_service.execute(
                     hostname=source_node.hostname,
-                    dataset=job.source_dataset,
-                    autosnap=True,
-                    autoprune=True,
-                    keep_snapshots=job.keep_snapshots,
+                    command=create_snap_cmd,
                     port=source_node.ssh_port,
                     username=source_node.ssh_user,
-                    key_path=source_node.ssh_key_path
+                    key_path=source_node.ssh_key_path,
+                    timeout=60
                 )
                 
-                # Configura sanoid su destinazione (autosnap=no, solo prune)
-                await sanoid_config_service.add_dataset_config(
-                    hostname=dest_node.hostname,
-                    dataset=job.dest_dataset,
-                    autosnap=False,
-                    autoprune=True,
-                    keep_snapshots=job.keep_snapshots,
-                    port=dest_node.ssh_port,
-                    username=dest_node.ssh_user,
-                    key_path=dest_node.ssh_key_path
-                )
-                
-                # Esegui sanoid su sorgente per creare snapshot
-                await sanoid_config_service.run_sanoid(
-                    hostname=source_node.hostname,
-                    port=source_node.ssh_port,
-                    username=source_node.ssh_user,
-                    key_path=source_node.ssh_key_path
-                )
+                if not snap_result.success:
+                    logger.warning(f"Errore creazione snapshot retention: {snap_result.stderr}")
             
-            # Esegui sync ZFS (usa --no-sync-snap se sanoid gestisce le snapshot)
+            # Esegui sync ZFS
             result = await syncoid_service.run_sync(
                 executor_host=source_node.hostname,
                 source_host=None,
@@ -220,19 +205,47 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                 recursive=job.recursive,
                 compress=job.compress or "lz4",
                 mbuffer_size=job.mbuffer_size or "128M",
-                no_sync_snap=use_sanoid or job.no_sync_snap,  # Usa sanoid snapshots se retention attiva
+                no_sync_snap=job.no_sync_snap,
                 force_delete=job.force_delete,
                 extra_args=job.extra_args or ""
             )
             
-            # Dopo sync riuscito con sanoid, esegui prune su destinazione
-            if use_sanoid and result["success"]:
-                await sanoid_config_service.run_sanoid(
+            # Dopo sync riuscito, applica retention sulle snapshot backup_* 
+            if use_retention and result["success"]:
+                # Lista snapshot backup_* sulla destinazione
+                list_cmd = f"zfs list -t snapshot -o name -s creation -H {job.dest_dataset} 2>/dev/null | grep '@backup_' || true"
+                list_result = await ssh_service.execute(
                     hostname=dest_node.hostname,
+                    command=list_cmd,
                     port=dest_node.ssh_port,
                     username=dest_node.ssh_user,
-                    key_path=dest_node.ssh_key_path
+                    key_path=dest_node.ssh_key_path,
+                    timeout=60
                 )
+                
+                if list_result.success and list_result.stdout.strip():
+                    snapshots = [s.strip() for s in list_result.stdout.strip().split('\n') if s.strip()]
+                    
+                    # Se abbiamo più snapshot del limite, elimina le più vecchie
+                    if len(snapshots) > job.keep_snapshots:
+                        to_delete = snapshots[:-job.keep_snapshots]
+                        deleted_count = 0
+                        
+                        for snap in to_delete:
+                            del_cmd = f"zfs destroy {snap}"
+                            del_result = await ssh_service.execute(
+                                hostname=dest_node.hostname,
+                                command=del_cmd,
+                                port=dest_node.ssh_port,
+                                username=dest_node.ssh_user,
+                                key_path=dest_node.ssh_key_path,
+                                timeout=60
+                            )
+                            if del_result.success:
+                                deleted_count += 1
+                        
+                        if deleted_count > 0:
+                            result["retention_deleted"] = deleted_count
         
         # Aggiorna job e log
         job_record.last_run = datetime.utcnow()
@@ -291,9 +304,13 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                 except Exception as e:
                     log_entry.message += f" | Errore registrazione VM: {str(e)}"
             
-            # Sanoid gestisce retention se configurato
-            if job.keep_snapshots and job.keep_snapshots > 0:
-                log_entry.message += f" | Sanoid retention: {job.keep_snapshots} versioni"
+            # Log retention info
+            if use_retention:
+                deleted = result.get("retention_deleted", 0)
+                if deleted > 0:
+                    log_entry.message += f" | Retention: {job.keep_snapshots} versioni (eliminate {deleted})"
+                else:
+                    log_entry.message += f" | Retention: {job.keep_snapshots} versioni"
         else:
             job_record.last_status = "failed"
             job_record.error_count += 1
@@ -1259,8 +1276,8 @@ async def list_job_snapshots(
     if not dest_node:
         raise HTTPException(status_code=404, detail="Nodo destinazione non trovato")
     
-    # Lista snapshot sul dataset destinazione (syncoid_, autosnap_, retention_)
-    cmd = f"zfs list -t snapshot -o name,creation,used,referenced -s creation -H {job.dest_dataset} 2>/dev/null | grep -E 'syncoid_|autosnap_|retention_' || true"
+    # Lista snapshot sul dataset destinazione (syncoid_, autosnap_, backup_, retention_)
+    cmd = f"zfs list -t snapshot -o name,creation,used,referenced -s creation -H {job.dest_dataset} 2>/dev/null | grep -E 'syncoid_|autosnap_|backup_|retention_' || true"
     
     result = await ssh_service.execute(
         hostname=dest_node.hostname,

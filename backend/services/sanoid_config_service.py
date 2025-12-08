@@ -100,17 +100,14 @@ class SanoidConfigService:
                 current_config = '\n'.join(new_lines)
             
             # Costruisci nuova configurazione per il dataset
-            # Converti keep_snapshots in policy sanoid
-            daily = min(keep_snapshots, 30)  # Max 30 daily
-            weekly = max(0, (keep_snapshots - 30) // 7)  # Extra as weekly
-            
+            # Usa hourly per permettere snapshot multiple nello stesso giorno
             new_config = self._build_dataset_config(
                 dataset=dataset,
                 autosnap=autosnap,
                 autoprune=autoprune,
-                hourly=0,
-                daily=daily,
-                weekly=min(weekly, 4),
+                hourly=keep_snapshots,  # Mantiene N snapshot orarie
+                daily=0,
+                weekly=0,
                 monthly=0,
                 yearly=0
             )
