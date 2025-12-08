@@ -2573,10 +2573,10 @@
                 </div>
             </div>
             
-            <!-- Recovery Jobs (PBS) Page -->
+            <!-- Replica Jobs (PBS) Page -->
             <div v-if="currentPage === 'recovery'">
                 <div class="page-header">
-                    <h1 class="page-title">🔄 Recovery Jobs (PBS)</h1>
+                    <h1 class="page-title">🔄 Replica Jobs (PBS)</h1>
                     <p class="page-subtitle">Replica basata su backup Proxmox Backup Server - per filesystem non supportati (LVM, local, etc.)</p>
                 </div>
                 
@@ -2585,7 +2585,7 @@
                     <div style="display: flex; gap: 16px; align-items: flex-start;">
                         <div style="font-size: 2rem;">💡</div>
                         <div>
-                            <h3 style="color: #ce93d8; margin-bottom: 8px;">Come funziona la Recovery PBS</h3>
+                            <h3 style="color: #ce93d8; margin-bottom: 8px;">Come funziona la Replica PBS</h3>
                             <p style="color: var(--text-secondary); line-height: 1.6;">
                                 Questa funzionalità permette di replicare VM anche con storage non supportati da ZFS/BTRFS (es. LVM, local, etc.).<br>
                                 <strong>Workflow:</strong> 1️⃣ Backup VM sorgente → PBS  2️⃣ Restore automatico su nodo destinazione  3️⃣ Registrazione VM
@@ -2598,7 +2598,7 @@
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-value">{{ recoveryJobs.length }}</div>
-                        <div class="stat-label">Recovery Jobs</div>
+                        <div class="stat-label">Replica Jobs</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-value">{{ recoveryJobs.filter(j => j.is_active).length }}</div>
@@ -2622,7 +2622,7 @@
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                             </svg>
-                            Nuovo Recovery Job
+                            Nuovo Replica Job
                         </button>
                     </div>
                     
@@ -2728,7 +2728,7 @@
                 <!-- Recovery Jobs List -->
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-title">📋 Recovery Jobs Configurati</div>
+                        <div class="card-title">📋 Replica Jobs Configurati</div>
                         <button class="btn btn-sm btn-secondary" @click="loadRecoveryJobs">
                             🔄 Aggiorna
                         </button>
@@ -2736,7 +2736,7 @@
                     
                     <div v-if="recoveryJobs.length === 0" style="color: var(--text-secondary); padding: 40px; text-align: center;">
                         <div style="font-size: 3rem; margin-bottom: 16px;">📦</div>
-                        <p>Nessun recovery job configurato.</p>
+                        <p>Nessun replica job configurato.</p>
                         <p style="margin-top: 8px;">Crea un nuovo job per iniziare la replica basata su backup.</p>
                     </div>
                     
@@ -2858,11 +2858,11 @@
                 </div>
             </div>
             
-            <!-- Add Recovery Job Modal -->
+            <!-- Add Replica Job (PBS) Modal -->
             <div class="modal-overlay" v-if="showAddRecoveryJobModal" @click.self="showAddRecoveryJobModal = false">
                 <div class="modal" style="max-width: 600px;">
                     <div class="modal-header">
-                        <h3 class="modal-title">➕ Nuovo Recovery Job (PBS)</h3>
+                        <h3 class="modal-title">➕ Nuovo Replica Job (PBS)</h3>
                         <button class="btn btn-icon btn-secondary" @click="showAddRecoveryJobModal = false">✕</button>
                     </div>
                     <div class="modal-body">
