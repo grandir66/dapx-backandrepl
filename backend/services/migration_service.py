@@ -268,6 +268,55 @@ class MigrationService:
         
         target_vmid = dest_vm_id if dest_vm_id else vm_id
         
+        # Verifica se la VM destinazione esiste già
+        check_vm_cmd = f"{'qm' if vm_type == 'qemu' else 'pct'} status {target_vmid} 2>/dev/null"
+        check_result = await ssh_service.execute(
+            hostname=dest_hostname,
+            command=check_vm_cmd,
+            port=dest_port,
+            username=dest_user,
+            key_path=dest_key,
+            timeout=30
+        )
+        
+        if check_result.success and check_result.stdout.strip():
+            # La VM esiste già - per copia ricorrente, eliminiamola
+            logger.info(f"VM {target_vmid} esiste già su {dest_hostname}, la elimino prima di procedere")
+            
+            # Prima stoppa la VM se in esecuzione
+            stop_cmd = f"{'qm' if vm_type == 'qemu' else 'pct'} stop {target_vmid} --skiplock 2>/dev/null || true"
+            await ssh_service.execute(
+                hostname=dest_hostname,
+                command=stop_cmd,
+                port=dest_port,
+                username=dest_user,
+                key_path=dest_key,
+                timeout=60
+            )
+            
+            # Attendi che si fermi
+            await asyncio.sleep(3)
+            
+            # Elimina la VM
+            destroy_cmd = f"{'qm' if vm_type == 'qemu' else 'pct'} destroy {target_vmid} --purge --skiplock"
+            destroy_result = await ssh_service.execute(
+                hostname=dest_hostname,
+                command=destroy_cmd,
+                port=dest_port,
+                username=dest_user,
+                key_path=dest_key,
+                timeout=120
+            )
+            
+            if not destroy_result.success:
+                return {
+                    "success": False,
+                    "message": f"Impossibile eliminare VM esistente {target_vmid}: {destroy_result.stderr}",
+                    "error": destroy_result.stderr
+                }
+            
+            logger.info(f"VM {target_vmid} eliminata con successo")
+        
         # Crea snapshot se richiesto
         snapshot_name = None
         if create_snapshot:
