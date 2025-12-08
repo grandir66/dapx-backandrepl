@@ -27,7 +27,7 @@ class JobLogResponse(BaseModel):
     message: Optional[str] = None
     output: Optional[str] = None
     error: Optional[str] = None
-    duration: Optional[int] = None
+    duration: Optional[float] = None  # Can be float from database
     transferred: Optional[str] = None
     attempt_number: Optional[int] = 1
     started_at: datetime
