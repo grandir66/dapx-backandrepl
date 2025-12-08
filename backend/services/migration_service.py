@@ -576,6 +576,9 @@ class MigrationService:
         key_path: str = "/root/.ssh/id_rsa"
     ) -> Dict:
         """Applica riconfigurazione hardware alla VM"""
+        logger.info(f"=== Applicando hw_config a VM {vm_id} su {hostname} ===")
+        logger.info(f"hw_config ricevuto: {json.dumps(hw_config, default=str)}")
+        
         cmd = "qm" if vm_type == "qemu" else "pct"
         changes = []
         
@@ -669,20 +672,52 @@ class MigrationService:
         # Modifica network (bridge)
         if "network" in hw_config:
             for net_iface, net_config in hw_config["network"].items():
-                # net_config può essere stringa tipo "bridge=vmbr1" o dict
+                # Prima leggi la configurazione attuale della scheda di rete
+                get_net_cmd = f"{cmd} config {vm_id} | grep '^{net_iface}:'"
+                get_net_result = await ssh_service.execute(
+                    hostname=hostname,
+                    command=get_net_cmd,
+                    port=port,
+                    username=username,
+                    key_path=key_path,
+                    timeout=30
+                )
+                
+                if not get_net_result.success or not get_net_result.stdout.strip():
+                    logger.warning(f"Interfaccia {net_iface} non trovata sulla VM {vm_id}")
+                    continue
+                
+                # Estrai la config attuale (es: "net0: virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,firewall=1")
+                current_config = get_net_result.stdout.strip().split(":", 1)[1].strip()
+                logger.info(f"Config attuale {net_iface}: {current_config}")
+                
+                # Determina il nuovo bridge
+                new_bridge = None
                 if isinstance(net_config, str):
-                    # Estrai bridge
                     bridge_match = re.search(r'bridge=([^,\s]+)', net_config)
                     if bridge_match:
-                        bridge = bridge_match.group(1)
-                        net_cmd = f"{cmd} set {vm_id} --{net_iface} bridge={bridge}"
+                        new_bridge = bridge_match.group(1)
                     else:
-                        net_cmd = f"{cmd} set {vm_id} --{net_iface} {net_config}"
-                else:
-                    # Dict con più opzioni
-                    net_str = ",".join([f"{k}={v}" for k, v in net_config.items()])
-                    net_cmd = f"{cmd} set {vm_id} --{net_iface} {net_str}"
+                        # Assume sia solo il nome del bridge
+                        new_bridge = net_config
+                elif isinstance(net_config, dict) and "bridge" in net_config:
+                    new_bridge = net_config["bridge"]
                 
+                if not new_bridge:
+                    logger.warning(f"Bridge non specificato per {net_iface}")
+                    continue
+                
+                # Sostituisci il bridge nella config esistente
+                new_config = re.sub(r'bridge=[^,\s]+', f'bridge={new_bridge}', current_config)
+                
+                # Se non c'era un bridge nella config, aggiungilo
+                if 'bridge=' not in new_config:
+                    new_config = f"{new_config},bridge={new_bridge}"
+                
+                logger.info(f"Nuova config {net_iface}: {new_config}")
+                
+                # Applica la nuova configurazione
+                net_cmd = f"{cmd} set {vm_id} --{net_iface} {new_config}"
                 net_result = await ssh_service.execute(
                     hostname=hostname,
                     command=net_cmd,
@@ -691,8 +726,12 @@ class MigrationService:
                     key_path=key_path,
                     timeout=30
                 )
+                
                 if net_result.success:
-                    changes.append(f"{net_iface}: {net_config}")
+                    changes.append(f"{net_iface}: bridge={new_bridge}")
+                    logger.info(f"Bridge {net_iface} cambiato a {new_bridge}")
+                else:
+                    logger.error(f"Errore cambio bridge {net_iface}: {net_result.stderr}")
         
         # Modifica storage (sposta dischi)
         if "storage" in hw_config:
