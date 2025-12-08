@@ -285,7 +285,8 @@ class MigrationService:
                 logger.warning(f"Errore creazione snapshot: {snap_result.stderr}")
         
         # Crea backup
-        backup_cmd = f"vzdump {vm_id} --compress zstd --storage local --dumpdir /tmp --mode snapshot --remove 0"
+        # Nota: non possiamo usare --storage e --dumpdir insieme
+        backup_cmd = f"vzdump {vm_id} --compress zstd --dumpdir /tmp --mode snapshot --remove 0"
         backup_result = await ssh_service.execute(
             hostname=source_hostname,
             command=backup_cmd,
