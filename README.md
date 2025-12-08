@@ -2,7 +2,7 @@
 
 **Sistema centralizzato di backup e replica per infrastrutture Proxmox VE**
 
-![Version](https://img.shields.io/badge/version-3.3.0-blue)
+![Version](https://img.shields.io/badge/version-3.5.0-blue)
 ![Python](https://img.shields.io/badge/python-3.9+-green)
 ![License](https://img.shields.io/badge/license-Proprietary-red)
 
@@ -60,7 +60,48 @@ Il container sarà disponibile su `http://localhost:8420`
 
 > 📘 **Vedi [DOCKER.md](DOCKER.md) per documentazione completa sull'installazione containerizzata**
 
-### Opzione 2: Installazione Standard (Consigliata per produzione)
+### Opzione 2: Installazione in Container LXC Proxmox (Consigliata per produzione)
+
+Installa direttamente in un container LXC su Proxmox con un singolo comando:
+
+```bash
+# Esegui sul nodo Proxmox (non nel container)
+bash <(curl -s https://raw.githubusercontent.com/grandir66/dapx-backandrepl/main/lxc/auto-deploy.sh)
+```
+
+Lo script interattivo ti guiderà nella:
+- Selezione dell'ID container
+- Scelta dello storage
+- Selezione del bridge di rete
+- Scelta del template Debian/Ubuntu
+
+Al termine, accedi a `http://IP-CONTAINER:8420`
+
+> 📘 **Vedi [lxc/README.md](lxc/README.md) per documentazione completa sull'installazione LXC**
+
+#### Comandi Manuali LXC
+
+Se preferisci un controllo più granulare:
+
+```bash
+# 1. Scarica gli script
+cd /root
+git clone https://github.com/grandir66/dapx-backandrepl.git
+cd dapx-backandrepl/lxc
+
+# 2. Crea il container (personalizza i parametri)
+./create-lxc-container.sh 200 dapx-backandrepl local-lvm 8G 1024 2 vmbr0 dhcp
+
+# 3. Installa l'applicazione nel container
+pct exec 200 -- bash < install-in-lxc.sh
+
+# 4. Gestisci il container
+./manage-lxc.sh 200 status
+./manage-lxc.sh 200 logs
+./manage-lxc.sh 200 update
+```
+
+### Opzione 3: Installazione Standard (Consigliata per installazione diretta)
 
 ```bash
 # Clona il repository
