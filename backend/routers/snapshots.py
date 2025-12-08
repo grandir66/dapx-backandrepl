@@ -656,31 +656,31 @@ async def update_vm_snapshot_config(
     db.commit()
     db.refresh(config)
     
-        # Se abilitato, applica configurazione sanoid ai dataset della VM
-        if config.enabled:
-            from routers.vms import get_vm_datasets
-            from services.sanoid_config_service import sanoid_config_service
-            
-            try:
-                datasets_resp = await get_vm_datasets(node_id, vm_id, vm_type, user, db)
-                if datasets_resp and datasets_resp.datasets:
-                    for dataset in datasets_resp.datasets:
-                        await sanoid_config_service.add_dataset_config(
-                            hostname=node.hostname,
-                            dataset=dataset,
-                            autosnap=True,
-                            autoprune=True,
-                            hourly=config.hourly,
-                            daily=config.daily,
-                            weekly=config.weekly,
-                            monthly=config.monthly,
-                            yearly=config.yearly,
-                            port=node.ssh_port,
-                            username=node.ssh_user,
-                            key_path=node.ssh_key_path
-                        )
-            except Exception as e:
-                logger.warning(f"Errore applicazione config sanoid: {e}")
+    # Se abilitato, applica configurazione sanoid ai dataset della VM
+    if config.enabled:
+        from routers.vms import get_vm_datasets
+        from services.sanoid_config_service import sanoid_config_service
+        
+        try:
+            datasets_resp = await get_vm_datasets(node_id, vm_id, vm_type, user, db)
+            if datasets_resp and datasets_resp.datasets:
+                for dataset in datasets_resp.datasets:
+                    await sanoid_config_service.add_dataset_config(
+                        hostname=node.hostname,
+                        dataset=dataset,
+                        autosnap=True,
+                        autoprune=True,
+                        hourly=config.hourly,
+                        daily=config.daily,
+                        weekly=config.weekly,
+                        monthly=config.monthly,
+                        yearly=config.yearly,
+                        port=node.ssh_port,
+                        username=node.ssh_user,
+                        key_path=node.ssh_key_path
+                    )
+        except Exception as e:
+            logger.warning(f"Errore applicazione config sanoid: {e}")
     
     log_audit(
         db, user.id, "vm_snapshot_config_updated", "vm_snapshot_config",
