@@ -81,6 +81,8 @@ class DashboardOverviewResponse(BaseModel):
     used_memory_gb: float
     total_cpu_cores: int
     nodes_summary: List[Dict[str, Any]] = []
+    job_stats: Dict[str, Any] = {}
+    recent_logs: List[Dict[str, Any]] = []
 
 
 # ============== Endpoints ==============
@@ -309,6 +311,38 @@ async def get_dashboard_overview(
             logger.error(f"Errore raccolta dati nodo {node.name}: {e}")
             continue
     
+    # Ottieni statistiche job
+    from database import SyncJob, BackupJob, RecoveryJob, MigrationJob
+    sync_jobs = db.query(SyncJob).filter(SyncJob.is_active == True).all()
+    backup_jobs = db.query(BackupJob).filter(BackupJob.is_active == True).all()
+    recovery_jobs = db.query(RecoveryJob).filter(RecoveryJob.is_active == True).all()
+    migration_jobs = db.query(MigrationJob).filter(MigrationJob.is_active == True).all()
+    
+    job_stats = {
+        "replica_zfs": sum(1 for j in sync_jobs if j.sync_method == "syncoid"),
+        "replica_btrfs": sum(1 for j in sync_jobs if j.sync_method == "btrfs_send"),
+        "backup_pbs": len(backup_jobs),
+        "replica_pbs": len(recovery_jobs),
+        "migration": len(migration_jobs),
+        "total": len(sync_jobs) + len(backup_jobs) + len(recovery_jobs) + len(migration_jobs)
+    }
+    
+    # Ottieni log recenti
+    from database import JobLog
+    recent_logs_query = db.query(JobLog).order_by(JobLog.started_at.desc()).limit(10)
+    recent_logs = []
+    for log in recent_logs_query.all():
+        recent_logs.append({
+            "id": log.id,
+            "job_type": log.job_type,
+            "job_name": log.job_name,
+            "status": log.status,
+            "started_at": log.started_at.isoformat() if log.started_at else None,
+            "duration": log.duration,
+            "node_name": log.node_name,
+            "message": log.message[:200] if log.message else None
+        })
+    
     return DashboardOverviewResponse(
         total_nodes=total_nodes,
         online_nodes=online_nodes,
@@ -319,7 +353,9 @@ async def get_dashboard_overview(
         total_memory_gb=round(total_memory_gb, 2),
         used_memory_gb=round(used_memory_gb, 2),
         total_cpu_cores=total_cpu_cores,
-        nodes_summary=nodes_summary
+        nodes_summary=nodes_summary,
+        job_stats=job_stats,
+        recent_logs=recent_logs
     )
 
 
@@ -411,6 +447,159 @@ async def get_dashboard_nodes(
         nodes_list.append(node_summary)
     
     return nodes_list
+
+
+@router.get("/nodes/{node_id}/metrics")
+async def get_node_metrics(
+    node_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Ottiene metriche di performance in tempo reale per un nodo.
+    Include CPU usage, RAM usage, Network I/O, Disk I/O.
+    """
+    node = db.query(Node).filter(Node.id == node_id).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Nodo non trovato")
+    
+    if not check_node_access(user, node):
+        raise HTTPException(status_code=403, detail="Accesso negato a questo nodo")
+    
+    if node.node_type != "pve":
+        raise HTTPException(status_code=400, detail="Endpoint disponibile solo per nodi PVE")
+    
+    if not node.is_online:
+        raise HTTPException(status_code=400, detail="Nodo non online")
+    
+    metrics = await host_info_service.get_node_metrics(
+        hostname=node.hostname,
+        port=node.ssh_port,
+        username=node.ssh_user,
+        key_path=node.ssh_key_path
+    )
+    
+    metrics["node_id"] = node_id
+    metrics["node_name"] = node.name
+    
+    return metrics
+
+
+@router.get("/dashboard/nodes-metrics")
+async def get_all_nodes_metrics(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Ottiene metriche di performance per tutti i nodi online.
+    Ottimizzato per dashboard con chiamate parallele.
+    """
+    from routers.nodes import filter_nodes_for_user
+    nodes_query = db.query(Node).filter(Node.is_active == True, Node.node_type == "pve", Node.is_online == True)
+    nodes = filter_nodes_for_user(db, user, nodes_query).all()
+    
+    import asyncio
+    
+    async def get_metrics_for_node(node):
+        try:
+            metrics = await host_info_service.get_node_metrics(
+                hostname=node.hostname,
+                port=node.ssh_port,
+                username=node.ssh_user,
+                key_path=node.ssh_key_path
+            )
+            metrics["node_id"] = node.id
+            metrics["node_name"] = node.name
+            return metrics
+        except Exception as e:
+            logger.error(f"Errore metriche nodo {node.name}: {e}")
+            return {
+                "node_id": node.id,
+                "node_name": node.name,
+                "error": str(e)
+            }
+    
+    # Raccogli metriche in parallelo
+    tasks = [get_metrics_for_node(node) for node in nodes]
+    all_metrics = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Filtra errori
+    result = []
+    for metrics in all_metrics:
+        if isinstance(metrics, Exception):
+            continue
+        if "error" not in metrics:
+            result.append(metrics)
+    
+    return result
+
+
+@router.get("/dashboard/job-stats")
+async def get_dashboard_job_stats(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Ottiene statistiche job per tipo (replica ZFS, replica BTRFS, backup PBS, replica PBS, migrazione).
+    """
+    from database import SyncJob, BackupJob, RecoveryJob, MigrationJob
+    
+    # Filtra job accessibili all'utente
+    sync_jobs = db.query(SyncJob).filter(SyncJob.is_active == True).all()
+    backup_jobs = db.query(BackupJob).filter(BackupJob.is_active == True).all()
+    recovery_jobs = db.query(RecoveryJob).filter(RecoveryJob.is_active == True).all()
+    migration_jobs = db.query(MigrationJob).filter(MigrationJob.is_active == True).all()
+    
+    # Conta per tipo
+    stats = {
+        "replica_zfs": 0,
+        "replica_btrfs": 0,
+        "backup_pbs": len(backup_jobs),
+        "replica_pbs": len(recovery_jobs),
+        "migration": len(migration_jobs),
+        "total": 0
+    }
+    
+    # Conta replica ZFS e BTRFS
+    for job in sync_jobs:
+        if job.sync_method == "syncoid":
+            stats["replica_zfs"] += 1
+        elif job.sync_method == "btrfs_send":
+            stats["replica_btrfs"] += 1
+    
+    stats["total"] = stats["replica_zfs"] + stats["replica_btrfs"] + stats["backup_pbs"] + stats["replica_pbs"] + stats["migration"]
+    
+    # Statistiche per stato
+    stats["by_status"] = {
+        "success": 0,
+        "failed": 0,
+        "running": 0,
+        "pending": 0
+    }
+    
+    # Conta stati per tipo job
+    for job in sync_jobs:
+        if job.last_status == "success":
+            stats["by_status"]["success"] += 1
+        elif job.last_status == "failed":
+            stats["by_status"]["failed"] += 1
+        elif job.last_status == "running":
+            stats["by_status"]["running"] += 1
+        else:
+            stats["by_status"]["pending"] += 1
+    
+    for job in backup_jobs + recovery_jobs + migration_jobs:
+        status = getattr(job, 'last_status', None) or "pending"
+        if status == "success":
+            stats["by_status"]["success"] += 1
+        elif status == "failed":
+            stats["by_status"]["failed"] += 1
+        elif status == "running":
+            stats["by_status"]["running"] += 1
+        else:
+            stats["by_status"]["pending"] += 1
+    
+    return stats
 
 
 @router.get("/dashboard/vms", response_model=List[Dict[str, Any]])

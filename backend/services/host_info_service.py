@@ -834,6 +834,148 @@ class HostInfoService:
         except Exception as e:
             logger.error(f"Errore raccolta info licenza: {e}")
             return None
+    
+    async def get_node_metrics(
+        self,
+        hostname: str,
+        port: int = 22,
+        username: str = "root",
+        key_path: str = "/root/.ssh/id_rsa"
+    ) -> Dict[str, Any]:
+        """
+        Raccolta metriche di performance in tempo reale:
+        - CPU usage (%)
+        - RAM usage (%)
+        - Network I/O (bytes in/out)
+        - Disk I/O (read/write)
+        """
+        metrics = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "cpu": {
+                "usage_percent": 0.0,
+                "load_1min": 0.0,
+                "load_5min": 0.0,
+                "load_15min": 0.0
+            },
+            "memory": {
+                "usage_percent": 0.0,
+                "used_gb": 0.0,
+                "total_gb": 0.0,
+                "available_gb": 0.0
+            },
+            "network": {
+                "interfaces": []
+            },
+            "disk": {
+                "io_read_bytes": 0,
+                "io_write_bytes": 0,
+                "io_read_ops": 0,
+                "io_write_ops": 0
+            }
+        }
+        
+        try:
+            # Script batch per raccogliere tutte le metriche in una chiamata
+            metrics_cmd = '''
+# CPU usage e load
+cpu_info=$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\\([0-9.]*\\)%* id.*/\\1/" | awk '{print 100 - $1}')
+load_avg=$(uptime | awk -F'load average:' '{print $2}' | awk '{print $1","$2","$3}' | tr -d ' ')
+load_1=$(echo "$load_avg" | cut -d',' -f1)
+load_5=$(echo "$load_avg" | cut -d',' -f2)
+load_15=$(echo "$load_avg" | cut -d',' -f3)
+
+# Memory usage
+mem_info=$(free -g | grep "^Mem:")
+mem_total=$(echo "$mem_info" | awk '{print $2}')
+mem_used=$(echo "$mem_info" | awk '{print $3}')
+mem_avail=$(echo "$mem_info" | awk '{print $7}')
+mem_percent=$(echo "scale=2; ($mem_used / $mem_total) * 100" | bc)
+
+# Network I/O (bytes in/out per interfaccia principale)
+net_dev=$(ip route | grep default | awk '{print $5}' | head -1)
+if [ -n "$net_dev" ] && [ -f "/sys/class/net/$net_dev/statistics/rx_bytes" ]; then
+    net_rx=$(cat /sys/class/net/$net_dev/statistics/rx_bytes)
+    net_tx=$(cat /sys/class/net/$net_dev/statistics/tx_bytes)
+    net_rx_packets=$(cat /sys/class/net/$net_dev/statistics/rx_packets)
+    net_tx_packets=$(cat /sys/class/net/$net_dev/statistics/tx_packets)
+else
+    net_rx=0
+    net_tx=0
+    net_rx_packets=0
+    net_tx_packets=0
+fi
+
+# Disk I/O (somma di tutti i dischi)
+disk_read=0
+disk_write=0
+disk_read_ops=0
+disk_write_ops=0
+for disk in /sys/block/sd* /sys/block/nvme* /sys/block/vd*; do
+    if [ -f "$disk/stat" ]; then
+        read_bytes=$(awk '{print $3}' "$disk/stat" 2>/dev/null || echo "0")
+        write_bytes=$(awk '{print $7}' "$disk/stat" 2>/dev/null || echo "0")
+        read_ops=$(awk '{print $1}' "$disk/stat" 2>/dev/null || echo "0")
+        write_ops=$(awk '{print $5}' "$disk/stat" 2>/dev/null || echo "0")
+        disk_read=$((disk_read + read_bytes * 512))
+        disk_write=$((disk_write + write_bytes * 512))
+        disk_read_ops=$((disk_read_ops + read_ops))
+        disk_write_ops=$((disk_write_ops + write_ops))
+    fi
+done
+
+echo "CPU|$cpu_info|$load_1|$load_5|$load_15"
+echo "MEM|$mem_total|$mem_used|$mem_avail|$mem_percent"
+echo "NET|$net_dev|$net_rx|$net_tx|$net_rx_packets|$net_tx_packets"
+echo "DISK|$disk_read|$disk_write|$disk_read_ops|$disk_write_ops"
+'''
+            
+            result = await ssh_service.execute(
+                hostname=hostname,
+                command=metrics_cmd,
+                port=port,
+                username=username,
+                key_path=key_path,
+                timeout=30
+            )
+            
+            if result.success:
+                for line in result.stdout.splitlines():
+                    if line.startswith("CPU|"):
+                        parts = line.split("|")
+                        if len(parts) >= 5:
+                            metrics["cpu"]["usage_percent"] = float(parts[1] or 0)
+                            metrics["cpu"]["load_1min"] = float(parts[2] or 0)
+                            metrics["cpu"]["load_5min"] = float(parts[3] or 0)
+                            metrics["cpu"]["load_15min"] = float(parts[4] or 0)
+                    elif line.startswith("MEM|"):
+                        parts = line.split("|")
+                        if len(parts) >= 5:
+                            metrics["memory"]["total_gb"] = float(parts[1] or 0)
+                            metrics["memory"]["used_gb"] = float(parts[2] or 0)
+                            metrics["memory"]["available_gb"] = float(parts[3] or 0)
+                            metrics["memory"]["usage_percent"] = float(parts[4] or 0)
+                    elif line.startswith("NET|"):
+                        parts = line.split("|")
+                        if len(parts) >= 6:
+                            metrics["network"]["interfaces"] = [{
+                                "name": parts[1] or "unknown",
+                                "rx_bytes": int(parts[2] or 0),
+                                "tx_bytes": int(parts[3] or 0),
+                                "rx_packets": int(parts[4] or 0),
+                                "tx_packets": int(parts[5] or 0)
+                            }]
+                    elif line.startswith("DISK|"):
+                        parts = line.split("|")
+                        if len(parts) >= 5:
+                            metrics["disk"]["io_read_bytes"] = int(parts[1] or 0)
+                            metrics["disk"]["io_write_bytes"] = int(parts[2] or 0)
+                            metrics["disk"]["io_read_ops"] = int(parts[3] or 0)
+                            metrics["disk"]["io_write_ops"] = int(parts[4] or 0)
+            
+            return metrics
+        except Exception as e:
+            logger.error(f"Errore raccolta metriche per {hostname}: {e}")
+            return metrics
 
 
 # Singleton
