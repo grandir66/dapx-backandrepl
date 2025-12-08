@@ -354,13 +354,54 @@ class MigrationService:
         remote_backup = f"/tmp/{backup_file.split('/')[-1]}"
         
         # Restore sul nodo destinazione
-        # Determina storage destinazione
-        dest_storage = "local"
+        # Determina storage destinazione (deve supportare 'images')
+        dest_storage = None
         if hw_config and "storage" in hw_config:
             for disk, new_storage in hw_config["storage"].items():
                 if ":" in new_storage:
                     dest_storage = new_storage.split(":")[0]
                     break
+                elif new_storage:
+                    dest_storage = new_storage
+                    break
+        
+        # Se non specificato, trova uno storage che supporta 'images'
+        if not dest_storage:
+            find_storage_cmd = "pvesm status --content images 2>/dev/null | awk 'NR>1 {print $1}' | head -1"
+            storage_result = await ssh_service.execute(
+                hostname=dest_hostname,
+                command=find_storage_cmd,
+                port=dest_port,
+                username=dest_user,
+                key_path=dest_key,
+                timeout=30
+            )
+            if storage_result.success and storage_result.stdout.strip():
+                dest_storage = storage_result.stdout.strip()
+            else:
+                # Fallback comuni
+                for fallback in ["local-lvm", "local-zfs", "zfs", "lvm"]:
+                    check_cmd = f"pvesm status | grep -q '^{fallback}' && echo 'found'"
+                    check_result = await ssh_service.execute(
+                        hostname=dest_hostname,
+                        command=check_cmd,
+                        port=dest_port,
+                        username=dest_user,
+                        key_path=dest_key,
+                        timeout=10
+                    )
+                    if check_result.success and "found" in check_result.stdout:
+                        dest_storage = fallback
+                        break
+                
+                if not dest_storage:
+                    return {
+                        "success": False,
+                        "message": "Nessuno storage trovato che supporta 'images' sul nodo destinazione",
+                        "error": "Storage not found"
+                    }
+        
+        logger.info(f"Usando storage destinazione: {dest_storage}")
         
         # pct restore ha ordine parametri diverso: pct restore <vmid> <backup> --storage <storage>
         if vm_type == "lxc":
