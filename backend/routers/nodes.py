@@ -109,6 +109,8 @@ class NodeResponse(BaseModel):
     sanoid_installed: bool = False
     sanoid_version: Optional[str] = None
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    notes: Optional[str] = None
     # SSH setup info (solo per creazione)
     ssh_key_setup: Optional[Dict[str, Any]] = None
     
