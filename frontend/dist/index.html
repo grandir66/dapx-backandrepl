@@ -7584,6 +7584,11 @@
                         // Resetta selezione PBS e backup
                         selectedRestorePbs.value = null;
                         restorePbsBackups.value = [];
+                    } else if (newPage === 'logs') {
+                        loadLogs();
+                    } else if (newPage === 'host-backup') {
+                        loadHostBackupData();
+                        loadNodes();
                     }
                 });
                 
