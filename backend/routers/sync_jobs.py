@@ -334,6 +334,10 @@ class SyncJobCreate(BaseModel):
     dest_vm_name_suffix: Optional[str] = None  # Suffisso per nome VM su destinazione (es: -replica)
     disk_name: Optional[str] = None  # Nome disco (per BTRFS)
     
+    # Notifiche
+    notify_mode: str = "daily"  # daily, always, failure, never
+    notify_subject: Optional[str] = None
+    
     # Retry
     retry_on_failure: bool = True
     max_retries: int = 3
@@ -372,6 +376,11 @@ class SyncJobUpdate(BaseModel):
     disk_name: Optional[str] = None
     source_storage: Optional[str] = None  # Storage Proxmox sorgente
     dest_storage: Optional[str] = None  # Storage Proxmox destinazione
+    
+    # Notifiche
+    notify_mode: Optional[str] = None  # daily, always, failure, never
+    notify_subject: Optional[str] = None
+    
     retry_on_failure: Optional[bool] = None
     max_retries: Optional[int] = None
     retry_delay_minutes: Optional[int] = None
@@ -410,6 +419,13 @@ class SyncJobResponse(BaseModel):
     dest_vm_name_suffix: Optional[str] = None
     vm_group_id: Optional[str]
     disk_name: Optional[str]
+    source_storage: Optional[str] = None
+    dest_storage: Optional[str] = None
+    
+    # Notifiche
+    notify_mode: Optional[str] = "daily"  # daily, always, failure, never
+    notify_subject: Optional[str] = None
+    
     retry_on_failure: bool
     max_retries: int
     last_run: Optional[datetime]
