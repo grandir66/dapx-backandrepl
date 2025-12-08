@@ -7870,7 +7870,7 @@
                             return;
                         }
                         
-                        const resp = await axios.get(`${API}/nodes/${selectedVmNodeId.value}/vms/${vm.vmid}/datasets`);
+                        const resp = await axios.get(`${API}/vms/node/${selectedVmNodeId.value}/vm/${vm.vmid}/datasets`);
                         if (!resp.data.datasets || resp.data.datasets.length === 0) {
                             showToast('Questa VM non ha dataset ZFS. Usa Backup (PBS) per storage non-ZFS.', 'warning');
                             return;
