@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # DAPX-backandrepl - Deploy Automatico Container LXC
-# Script completo che scarica da GitHub e crea tutto automaticamente
+# Script completo per Proxmox con selezione interattiva del template
 #
 
 set -e
@@ -12,329 +12,455 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
 NC='\033[0m'
 BOLD='\033[1m'
 
-log_info() {
-    echo -e "${CYAN}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[✓]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[!]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[✗]${NC} $1"
-}
-
-log_step() {
-    echo -e "\n${BLUE}${BOLD}▶ $1${NC}"
-}
+log_info() { echo -e "${CYAN}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[✓]${NC} $1"; }
+log_warning() { echo -e "${YELLOW}[!]${NC} $1"; }
+log_error() { echo -e "${RED}[✗]${NC} $1"; }
+log_step() { echo -e "\n${BLUE}${BOLD}▶ $1${NC}"; }
 
 # ============== CONFIGURAZIONE ==============
 GITHUB_REPO="grandir66/dapx-backandrepl"
 GITHUB_BRANCH="main"
 WORK_DIR="/root/dapx-lxc-deploy"
 
-# Parametri container (modificabili)
-CTID="${1:-100}"
+# Parametri container (modificabili via argomenti)
+CTID="${1:-}"
 CT_NAME="${2:-dapx-backandrepl}"
-STORAGE="${3:-local-lvm}"
+STORAGE="${3:-}"
 ROOTFS_SIZE="${4:-8G}"
 MEMORY="${5:-1024}"
 CORES="${6:-2}"
-NETWORK_BRIDGE="${7:-vmbr0}"
+NETWORK_BRIDGE="${7:-}"
 IP_ADDRESS="${8:-dhcp}"
-GATEWAY="${9:-}"
-DNS_SERVERS="${10:-8.8.8.8 8.8.4.4}"
 
-# Template Debian
-TEMPLATE="debian-12-standard_12.0-1_amd64.tar.zst"
+# Template selezionato
+SELECTED_TEMPLATE=""
 
-log_info "════════════════════════════════════════════════"
-log_info "${BOLD}DAPX-backandrepl - Deploy Automatico LXC${NC}"
-log_info "════════════════════════════════════════════════"
-echo ""
+# ============== FUNZIONI ==============
 
-# Verifica permessi root
-if [ "$EUID" -ne 0 ]; then 
-    log_error "Questo script deve essere eseguito come root"
-    exit 1
-fi
+print_banner() {
+    echo -e "${CYAN}"
+    echo "╔════════════════════════════════════════════════════════════╗"
+    echo "║                                                            ║"
+    echo "║   ${BOLD}DAPX-backandrepl - Deploy Automatico LXC${NC}${CYAN}               ║"
+    echo "║                                                            ║"
+    echo "║   Sistema centralizzato di backup e replica                ║"
+    echo "║   per infrastrutture Proxmox VE                            ║"
+    echo "║                                                            ║"
+    echo "╚════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+}
 
-# Verifica che pct esista
-if ! command -v pct &> /dev/null; then
-    log_error "pct non trovato. Questo script deve essere eseguito su un nodo Proxmox."
-    exit 1
-fi
+check_root() {
+    if [ "$EUID" -ne 0 ]; then 
+        log_error "Questo script deve essere eseguito come root"
+        exit 1
+    fi
+}
 
-# Verifica che il CTID non esista già
-if pct list | grep -q "^${CTID} "; then
-    log_error "Container con ID ${CTID} già esistente!"
-    log_warning "Usa un ID diverso o elimina il container esistente:"
-    echo "  pct destroy ${CTID}"
-    exit 1
-fi
-
-# ============== STEP 1: Preparazione ambiente ==============
-log_step "Step 1/5: Preparazione ambiente"
-
-# Crea directory lavoro
-mkdir -p ${WORK_DIR}
-cd ${WORK_DIR}
-
-# Installa git se necessario
-if ! command -v git &> /dev/null; then
-    log_info "Installazione git..."
-    apt-get update -qq
-    apt-get install -y git > /dev/null 2>&1
-fi
-
-log_success "Ambiente preparato"
-
-# ============== STEP 2: Download da GitHub ==============
-log_step "Step 2/5: Download file da GitHub"
-
-log_info "Repository: https://github.com/${GITHUB_REPO}"
-log_info "Branch: ${GITHUB_BRANCH}"
-
-# Clona o aggiorna repository
-if [ -d "${WORK_DIR}/dapx-backandrepl" ]; then
-    log_info "Repository già presente, aggiornamento..."
-    cd ${WORK_DIR}/dapx-backandrepl
-    git fetch origin > /dev/null 2>&1 || true
-    git reset --hard origin/${GITHUB_BRANCH} > /dev/null 2>&1 || true
-    git pull origin ${GITHUB_BRANCH} > /dev/null 2>&1 || true
-else
-    log_info "Clone repository..."
-    cd ${WORK_DIR}
-    git clone --depth 1 --branch ${GITHUB_BRANCH} \
-        https://github.com/${GITHUB_REPO}.git > /dev/null 2>&1
-fi
-
-if [ ! -d "${WORK_DIR}/dapx-backandrepl/lxc" ]; then
-    log_error "Directory lxc non trovata nel repository!"
-    exit 1
-fi
-
-cd ${WORK_DIR}/dapx-backandrepl/lxc
-chmod +x *.sh
-
-log_success "File scaricati da GitHub"
-
-# ============== STEP 3: Verifica prerequisiti ==============
-log_step "Step 3/5: Verifica prerequisiti"
-
-# Verifica storage
-if ! pvesm status | grep -q "${STORAGE}"; then
-    log_warning "Storage '${STORAGE}' non trovato. Storage disponibili:"
-    pvesm status | grep -E "active|enabled" | awk '{print "  - " $1}'
-    log_error "Modifica lo script o crea lo storage '${STORAGE}'"
-    exit 1
-fi
-
-# Verifica bridge
-if ! ip addr show | grep -q "${NETWORK_BRIDGE}:"; then
-    log_warning "Bridge '${NETWORK_BRIDGE}' non trovato. Bridge disponibili:"
-    ip addr show | grep -E "^[0-9]+:.*:" | awk '{print "  - " $2}' | tr -d ':'
-    log_error "Modifica lo script o usa un bridge esistente"
-    exit 1
-fi
-
-# Verifica template - prima cerca template già presenti
-if [ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]; then
-    log_warning "Template ${TEMPLATE} non trovato."
+check_proxmox() {
+    if ! command -v pct &> /dev/null; then
+        log_error "pct non trovato. Questo script deve essere eseguito su un nodo Proxmox."
+        exit 1
+    fi
     
-    # Cerca template Debian già presenti
-    EXISTING_TEMPLATE=$(ls -t /var/lib/vz/template/cache/debian*.tar.zst 2>/dev/null | head -1)
-    if [ -n "${EXISTING_TEMPLATE}" ]; then
-        TEMPLATE=$(basename ${EXISTING_TEMPLATE})
-        log_success "Trovato template esistente: ${TEMPLATE}"
-    else
-        # Nessun template presente, prova a scaricarne uno
-        log_info "Nessun template Debian trovato. Tentativo download..."
-        
-        # Aggiorna repository template
-        log_info "Aggiornamento repository template..."
-        pveam update > /dev/null 2>&1 || true
-        
-        # Lista template disponibili
-        log_info "Template Debian disponibili:"
-        pveam available --section system 2>/dev/null | grep -i debian | head -5 || echo "  Nessun template Debian disponibile"
-        echo ""
-        
-        # Prova a scaricare template Debian
-        log_info "Tentativo download template Debian..."
-        
-        # Lista di template da provare (in ordine di preferenza)
-        TEMPLATES_TO_TRY=(
-            "debian-12-standard"
-            "debian-11-standard"
-            "debian-10-standard"
-            "ubuntu-22.04-standard"
-            "ubuntu-20.04-standard"
-        )
-        
-        DOWNLOADED=0
-        for TEMPLATE_NAME in "${TEMPLATES_TO_TRY[@]}"; do
-            log_info "Tentativo: ${TEMPLATE_NAME}..."
-            if pveam download local "${TEMPLATE_NAME}" 2>/dev/null; then
-                log_success "Template scaricato: ${TEMPLATE_NAME}"
-                # Trova il file scaricato
-                DOWNLOADED_TEMPLATE=$(ls -t /var/lib/vz/template/cache/${TEMPLATE_NAME}*.tar.zst 2>/dev/null | head -1)
-                if [ -n "${DOWNLOADED_TEMPLATE}" ]; then
-                    TEMPLATE=$(basename ${DOWNLOADED_TEMPLATE})
-                    log_info "Usando template: ${TEMPLATE}"
-                    DOWNLOADED=1
-                    break
-                fi
-            fi
-        done
-        
-        if [ ${DOWNLOADED} -eq 0 ]; then
-            log_error "Impossibile scaricare template automaticamente."
-            echo ""
-            log_info "Template disponibili nel sistema:"
-            ls -lh /var/lib/vz/template/cache/*.tar.zst 2>/dev/null | head -5 || echo "  Nessun template trovato"
-            echo ""
-            log_info "Istruzioni:"
-            echo "1. Aggiorna repository: pveam update"
-            echo "2. Lista template: pveam available --section system | grep debian"
-            echo "3. Scarica template: pveam download local <nome-template>"
-            echo ""
-            log_info "Oppure usa uno script helper:"
-            echo "  wget https://raw.githubusercontent.com/grandir66/dapx-backandrepl/main/lxc/find-template.sh"
-            echo "  chmod +x find-template.sh"
-            echo "  ./find-template.sh"
+    if ! command -v pveam &> /dev/null; then
+        log_error "pveam non trovato. Ambiente Proxmox non valido."
+        exit 1
+    fi
+}
+
+select_ctid() {
+    if [ -n "${CTID}" ]; then
+        # CTID fornito come argomento
+        if pct list 2>/dev/null | grep -q "^${CTID} "; then
+            log_error "Container con ID ${CTID} già esistente!"
             exit 1
         fi
+        return
     fi
-fi
+    
+    echo ""
+    log_info "Container esistenti:"
+    pct list 2>/dev/null || echo "  Nessun container"
+    echo ""
+    
+    # Trova primo ID disponibile
+    local next_id=100
+    while pct list 2>/dev/null | grep -q "^${next_id} "; do
+        next_id=$((next_id + 1))
+    done
+    
+    read -p "Inserisci ID container [${next_id}]: " input_ctid
+    CTID="${input_ctid:-$next_id}"
+    
+    if pct list 2>/dev/null | grep -q "^${CTID} "; then
+        log_error "Container con ID ${CTID} già esistente!"
+        exit 1
+    fi
+    
+    log_success "ID container: ${CTID}"
+}
 
-# Verifica finale che il template esista
-if [ ! -f "/var/lib/vz/template/cache/${TEMPLATE}" ]; then
-    log_error "Template ${TEMPLATE} non trovato in /var/lib/vz/template/cache/"
-    exit 1
-fi
+select_storage() {
+    if [ -n "${STORAGE}" ]; then
+        if ! pvesm status 2>/dev/null | grep -q "^${STORAGE}"; then
+            log_warning "Storage '${STORAGE}' non trovato."
+            STORAGE=""
+        else
+            return
+        fi
+    fi
+    
+    echo ""
+    log_info "Storage disponibili:"
+    echo ""
+    
+    local i=1
+    local storages=()
+    
+    while IFS= read -r line; do
+        local name=$(echo "$line" | awk '{print $1}')
+        local type=$(echo "$line" | awk '{print $2}')
+        local status=$(echo "$line" | awk '{print $3}')
+        local total=$(echo "$line" | awk '{print $4}')
+        local used=$(echo "$line" | awk '{print $5}')
+        
+        if [ "$status" = "active" ]; then
+            storages+=("$name")
+            printf "  ${CYAN}%d)${NC} %-15s [%s] - %s usati di %s\n" $i "$name" "$type" "$used" "$total"
+            i=$((i + 1))
+        fi
+    done < <(pvesm status 2>/dev/null | tail -n +2)
+    
+    echo ""
+    read -p "Seleziona storage [1]: " choice
+    choice="${choice:-1}"
+    
+    if [ "$choice" -ge 1 ] && [ "$choice" -le "${#storages[@]}" ]; then
+        STORAGE="${storages[$((choice-1))]}"
+        log_success "Storage selezionato: ${STORAGE}"
+    else
+        log_error "Selezione non valida"
+        exit 1
+    fi
+}
 
-log_success "Template verificato: ${TEMPLATE}"
+select_bridge() {
+    if [ -n "${NETWORK_BRIDGE}" ]; then
+        if ip link show "${NETWORK_BRIDGE}" &>/dev/null; then
+            return
+        else
+            log_warning "Bridge '${NETWORK_BRIDGE}' non trovato."
+            NETWORK_BRIDGE=""
+        fi
+    fi
+    
+    echo ""
+    log_info "Bridge di rete disponibili:"
+    echo ""
+    
+    local i=1
+    local bridges=()
+    
+    while IFS= read -r line; do
+        bridges+=("$line")
+        printf "  ${CYAN}%d)${NC} %s\n" $i "$line"
+        i=$((i + 1))
+    done < <(ip link show | grep -E "^[0-9]+: (vmbr|br)" | awk -F': ' '{print $2}' | cut -d'@' -f1)
+    
+    if [ ${#bridges[@]} -eq 0 ]; then
+        log_error "Nessun bridge trovato. Crea un bridge prima di continuare."
+        exit 1
+    fi
+    
+    echo ""
+    read -p "Seleziona bridge [1]: " choice
+    choice="${choice:-1}"
+    
+    if [ "$choice" -ge 1 ] && [ "$choice" -le "${#bridges[@]}" ]; then
+        NETWORK_BRIDGE="${bridges[$((choice-1))]}"
+        log_success "Bridge selezionato: ${NETWORK_BRIDGE}"
+    else
+        log_error "Selezione non valida"
+        exit 1
+    fi
+}
 
-log_success "Prerequisiti verificati"
+select_template() {
+    echo ""
+    log_step "Selezione Template"
+    
+    # Aggiorna lista template
+    log_info "Aggiornamento repository template..."
+    pveam update &>/dev/null || true
+    
+    # Lista template già scaricati
+    echo ""
+    log_info "Template già presenti nel sistema:"
+    echo ""
+    
+    local i=1
+    local local_templates=()
+    
+    if [ -d "/var/lib/vz/template/cache" ]; then
+        while IFS= read -r file; do
+            if [ -n "$file" ]; then
+                local name=$(basename "$file")
+                local size=$(du -h "$file" 2>/dev/null | cut -f1)
+                local_templates+=("$name")
+                printf "  ${GREEN}%d)${NC} %-50s [%s]\n" $i "$name" "$size"
+                i=$((i + 1))
+            fi
+        done < <(ls -1 /var/lib/vz/template/cache/*.tar.* 2>/dev/null | head -20)
+    fi
+    
+    if [ ${#local_templates[@]} -eq 0 ]; then
+        echo "  Nessun template locale trovato"
+    fi
+    
+    # Lista template disponibili per download
+    echo ""
+    log_info "Template disponibili per download (Debian/Ubuntu):"
+    echo ""
+    
+    local remote_templates=()
+    local remote_start=$i
+    
+    while IFS= read -r line; do
+        if [ -n "$line" ]; then
+            remote_templates+=("$line")
+            printf "  ${YELLOW}%d)${NC} %s ${MAGENTA}[download]${NC}\n" $i "$line"
+            i=$((i + 1))
+        fi
+    done < <(pveam available --section system 2>/dev/null | grep -iE "debian|ubuntu" | awk '{print $2}' | head -10)
+    
+    if [ ${#remote_templates[@]} -eq 0 ]; then
+        echo "  Nessun template disponibile per download"
+    fi
+    
+    echo ""
+    echo -e "  ${CYAN}0)${NC} Inserisci nome template manualmente"
+    echo ""
+    
+    read -p "Seleziona template: " choice
+    
+    if [ "$choice" = "0" ]; then
+        read -p "Nome template: " SELECTED_TEMPLATE
+    elif [ "$choice" -ge 1 ] && [ "$choice" -lt "$remote_start" ]; then
+        # Template locale
+        SELECTED_TEMPLATE="${local_templates[$((choice-1))]}"
+        log_success "Template locale selezionato: ${SELECTED_TEMPLATE}"
+    elif [ "$choice" -ge "$remote_start" ] && [ "$choice" -lt "$i" ]; then
+        # Template da scaricare
+        local remote_idx=$((choice - remote_start))
+        local template_name="${remote_templates[$remote_idx]}"
+        
+        log_info "Download template: ${template_name}..."
+        if pveam download local "${template_name}"; then
+            # Trova il file scaricato
+            SELECTED_TEMPLATE=$(ls -t /var/lib/vz/template/cache/${template_name}* 2>/dev/null | head -1)
+            if [ -n "${SELECTED_TEMPLATE}" ]; then
+                SELECTED_TEMPLATE=$(basename "${SELECTED_TEMPLATE}")
+                log_success "Template scaricato: ${SELECTED_TEMPLATE}"
+            else
+                log_error "Template scaricato ma file non trovato"
+                exit 1
+            fi
+        else
+            log_error "Errore download template"
+            exit 1
+        fi
+    else
+        log_error "Selezione non valida"
+        exit 1
+    fi
+    
+    # Verifica che il template esista
+    if [ ! -f "/var/lib/vz/template/cache/${SELECTED_TEMPLATE}" ]; then
+        log_error "Template non trovato: ${SELECTED_TEMPLATE}"
+        exit 1
+    fi
+}
 
-# ============== STEP 4: Creazione container ==============
-log_step "Step 4/5: Creazione container LXC"
+download_scripts() {
+    log_step "Download script da GitHub"
+    
+    mkdir -p ${WORK_DIR}
+    cd ${WORK_DIR}
+    
+    # Installa git se necessario
+    if ! command -v git &> /dev/null; then
+        log_info "Installazione git..."
+        apt-get update -qq
+        apt-get install -y git > /dev/null 2>&1
+    fi
+    
+    log_info "Repository: https://github.com/${GITHUB_REPO}"
+    
+    # Clona o aggiorna repository
+    if [ -d "${WORK_DIR}/dapx-backandrepl" ]; then
+        log_info "Aggiornamento repository..."
+        cd ${WORK_DIR}/dapx-backandrepl
+        git fetch origin &>/dev/null || true
+        git reset --hard origin/${GITHUB_BRANCH} &>/dev/null || true
+    else
+        log_info "Clone repository..."
+        cd ${WORK_DIR}
+        git clone --depth 1 --branch ${GITHUB_BRANCH} \
+            https://github.com/${GITHUB_REPO}.git &>/dev/null
+    fi
+    
+    if [ ! -d "${WORK_DIR}/dapx-backandrepl/lxc" ]; then
+        log_error "Directory lxc non trovata nel repository!"
+        exit 1
+    fi
+    
+    cd ${WORK_DIR}/dapx-backandrepl/lxc
+    chmod +x *.sh 2>/dev/null || true
+    
+    log_success "Script scaricati"
+}
 
-log_info "Parametri container:"
-echo "  ID: ${CTID}"
-echo "  Nome: ${CT_NAME}"
-echo "  Storage: ${STORAGE}"
-echo "  Rootfs: ${ROOTFS_SIZE}"
-echo "  Memoria: ${MEMORY} MB"
-echo "  CPU: ${CORES} cores"
-echo "  Bridge: ${NETWORK_BRIDGE}"
-echo "  IP: ${IP_ADDRESS}"
-
-# Crea container usando lo script
-log_info "Creazione container..."
-${WORK_DIR}/dapx-backandrepl/lxc/create-lxc-container.sh \
-    ${CTID} \
-    ${CT_NAME} \
-    ${STORAGE} \
-    ${ROOTFS_SIZE} \
-    ${MEMORY} \
-    ${CORES} \
-    ${NETWORK_BRIDGE} \
-    ${IP_ADDRESS} \
-    "${GATEWAY}" \
-    "${DNS_SERVERS}" \
-    "" \
-    ""
-
-if [ $? -ne 0 ]; then
-    log_error "Errore durante creazione container"
-    exit 1
-fi
-
-log_success "Container creato"
-
-# ============== STEP 5: Installazione applicazione ==============
-log_step "Step 5/5: Installazione applicazione"
-
-log_info "Copia script installazione nel container..."
-
-# Copia script installazione
-pct push ${CTID} \
-    ${WORK_DIR}/dapx-backandrepl/lxc/install-in-lxc.sh \
-    /tmp/dapx-install/install.sh
-
-pct exec ${CTID} -- chmod +x /tmp/dapx-install/install.sh
-
-log_info "Esecuzione installazione (questo può richiedere alcuni minuti)..."
-
-# Esegui installazione
-pct exec ${CTID} -- /tmp/dapx-install/install.sh
-
-if [ $? -ne 0 ]; then
-    log_error "Errore durante installazione"
-    log_warning "Puoi provare manualmente:"
-    echo "  pct exec ${CTID} -- /tmp/dapx-install/install.sh"
-    exit 1
-fi
-
-log_success "Applicazione installata"
-
-# ============== Verifica finale ==============
-log_step "Verifica installazione"
-
-# Attendi che il servizio sia pronto
-sleep 3
-
-# Verifica stato container
-if ! pct status ${CTID} | grep -q "running"; then
-    log_warning "Container non in esecuzione. Avvio..."
+create_container() {
+    log_step "Creazione Container LXC"
+    
+    log_info "Parametri:"
+    echo "  ID: ${CTID}"
+    echo "  Nome: ${CT_NAME}"
+    echo "  Template: ${SELECTED_TEMPLATE}"
+    echo "  Storage: ${STORAGE}"
+    echo "  Rootfs: ${ROOTFS_SIZE}"
+    echo "  Memoria: ${MEMORY} MB"
+    echo "  CPU: ${CORES} cores"
+    echo "  Bridge: ${NETWORK_BRIDGE}"
+    echo "  IP: ${IP_ADDRESS}"
+    echo ""
+    
+    read -p "Confermi la creazione? [Y/n]: " confirm
+    confirm="${confirm:-Y}"
+    
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        log_warning "Creazione annullata"
+        exit 0
+    fi
+    
+    log_info "Creazione container..."
+    
+    # Crea container
+    pct create ${CTID} \
+        /var/lib/vz/template/cache/${SELECTED_TEMPLATE} \
+        --storage ${STORAGE} \
+        --rootfs ${STORAGE}:${ROOTFS_SIZE} \
+        --hostname ${CT_NAME} \
+        --memory ${MEMORY} \
+        --cores ${CORES} \
+        --net0 name=eth0,bridge=${NETWORK_BRIDGE},ip=${IP_ADDRESS} \
+        --nameserver "8.8.8.8 8.8.4.4" \
+        --unprivileged 0 \
+        --features nesting=1,keyctl=1 \
+        --ostype debian \
+        --arch amd64 \
+        --start 0
+    
+    if [ $? -ne 0 ]; then
+        log_error "Errore durante creazione container"
+        exit 1
+    fi
+    
+    log_success "Container creato"
+    
+    # Avvia container
+    log_info "Avvio container..."
     pct start ${CTID}
-    sleep 3
-fi
+    sleep 5
+    
+    if ! pct status ${CTID} | grep -q "running"; then
+        log_error "Container non in esecuzione"
+        exit 1
+    fi
+    
+    log_success "Container avviato"
+}
 
-# Verifica servizio
-if pct exec ${CTID} -- systemctl is-active --quiet dapx-backandrepl; then
-    log_success "Servizio dapx-backandrepl attivo"
-else
-    log_warning "Servizio non attivo. Controlla i log:"
-    echo "  pct exec ${CTID} -- journalctl -u dapx-backandrepl -n 50"
-fi
+install_application() {
+    log_step "Installazione Applicazione"
+    
+    log_info "Copia script installazione..."
+    
+    # Crea directory nel container
+    pct exec ${CTID} -- mkdir -p /tmp/dapx-install
+    
+    # Copia script
+    pct push ${CTID} ${WORK_DIR}/dapx-backandrepl/lxc/install-in-lxc.sh /tmp/dapx-install/install.sh
+    pct exec ${CTID} -- chmod +x /tmp/dapx-install/install.sh
+    
+    log_info "Esecuzione installazione (questo richiede alcuni minuti)..."
+    echo ""
+    
+    # Esegui installazione
+    pct exec ${CTID} -- /tmp/dapx-install/install.sh
+    
+    if [ $? -ne 0 ]; then
+        log_error "Errore durante installazione"
+        log_warning "Puoi riprovare manualmente con:"
+        echo "  pct exec ${CTID} -- /tmp/dapx-install/install.sh"
+        exit 1
+    fi
+    
+    log_success "Applicazione installata"
+}
 
-# Ottieni IP
-CONTAINER_IP=$(pct exec ${CTID} -- hostname -I | awk '{print $1}')
+show_summary() {
+    # Ottieni IP container
+    local container_ip=$(pct exec ${CTID} -- hostname -I 2>/dev/null | awk '{print $1}')
+    
+    echo ""
+    echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║                                                            ║${NC}"
+    echo -e "${GREEN}║   ${BOLD}Deploy completato con successo!${NC}${GREEN}                        ║${NC}"
+    echo -e "${GREEN}║                                                            ║${NC}"
+    echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    log_info "${BOLD}Informazioni Container:${NC}"
+    echo "  ID: ${CTID}"
+    echo "  Nome: ${CT_NAME}"
+    echo "  IP: ${container_ip:-N/A}"
+    echo "  Porta: 8420"
+    echo ""
+    log_info "${BOLD}Accesso Web UI:${NC}"
+    if [ -n "${container_ip}" ]; then
+        echo -e "  ${CYAN}http://${container_ip}:8420${NC}"
+    else
+        echo "  http://<IP-CONTAINER>:8420"
+    fi
+    echo ""
+    log_info "${BOLD}Comandi utili:${NC}"
+    echo "  Stato:     pct status ${CTID}"
+    echo "  Console:   pct enter ${CTID}"
+    echo "  Log:       pct exec ${CTID} -- journalctl -u dapx-backandrepl -f"
+    echo "  Riavvia:   pct exec ${CTID} -- systemctl restart dapx-backandrepl"
+    echo ""
+    log_info "${BOLD}Gestione:${NC}"
+    echo "  ${WORK_DIR}/dapx-backandrepl/lxc/manage-lxc.sh ${CTID} <comando>"
+    echo ""
+}
 
-# ============== Riepilogo finale ==============
-echo ""
-log_success "════════════════════════════════════════════════"
-log_success "${BOLD}Deploy completato con successo!${NC}"
-log_success "════════════════════════════════════════════════"
-echo ""
-log_info "${BOLD}Informazioni Container:${NC}"
-echo "  ID: ${CTID}"
-echo "  Nome: ${CT_NAME}"
-echo "  IP: ${CONTAINER_IP}"
-echo "  Porta: 8420"
-echo ""
-log_info "${BOLD}Accesso Web UI:${NC}"
-echo "  http://${CONTAINER_IP}:8420"
-echo ""
-log_info "${BOLD}Comandi utili:${NC}"
-echo "  Stato container:     pct status ${CTID}"
-echo "  Log servizio:        pct exec ${CTID} -- journalctl -u dapx-backandrepl -f"
-echo "  Entra nel container: pct enter ${CTID}"
-echo "  Gestione completa:   ${WORK_DIR}/dapx-backandrepl/lxc/manage-lxc.sh ${CTID} <azione>"
-echo ""
-log_info "${BOLD}File di gestione:${NC}"
-echo "  Directory: ${WORK_DIR}/dapx-backandrepl/lxc/"
-echo "  Script gestione: ${WORK_DIR}/dapx-backandrepl/lxc/manage-lxc.sh"
-echo ""
-log_success "════════════════════════════════════════════════"
+# ============== MAIN ==============
 
+print_banner
+check_root
+check_proxmox
+
+select_ctid
+select_storage
+select_bridge
+select_template
+download_scripts
+create_container
+install_application
+show_summary
