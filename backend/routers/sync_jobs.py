@@ -247,10 +247,13 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
             # Crea snapshot di retention e applica policy (solo per ZFS)
             if job.keep_snapshots and job.keep_snapshots > 0 and sync_method != SyncMethod.BTRFS_SEND.value:
                 try:
-                    # Crea una snapshot di retention con timestamp
+                    # Crea una snapshot di retention con timestamp e proteggila con hold
                     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
                     retention_snap_name = f"retention_{timestamp}"
-                    create_snap_cmd = f"zfs snapshot {job.dest_dataset}@{retention_snap_name}"
+                    full_snap = f"{job.dest_dataset}@{retention_snap_name}"
+                    
+                    # Crea snapshot e applicagli un hold per proteggerla da syncoid
+                    create_snap_cmd = f"zfs snapshot {full_snap} && zfs hold keep {full_snap}"
                     
                     snap_result = await ssh_service.execute(
                         hostname=dest_node.hostname,
@@ -262,7 +265,9 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                     )
                     
                     if snap_result.success:
-                        log_entry.message += f" | Snapshot retention creata: {retention_snap_name}"
+                        log_entry.message += f" | Retention: {retention_snap_name} (protetta)"
+                    else:
+                        log_entry.message += f" | Errore retention: {snap_result.stderr[:50] if snap_result.stderr else 'unknown'}"
                     
                     # Lista snapshot di retention sul dataset destinazione
                     list_cmd = f"zfs list -t snapshot -o name -s creation {job.dest_dataset} 2>/dev/null | grep 'retention_' || true"
@@ -284,10 +289,12 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                             deleted_count = 0
                             
                             for snap in to_delete:
-                                del_cmd = f"zfs destroy {snap}"
+                                # Prima rilascia l'hold, poi elimina
+                                snap_name = snap.split('@')[1] if '@' in snap else snap
+                                release_cmd = f"zfs release keep {snap} 2>/dev/null; zfs destroy {snap}"
                                 del_result = await ssh_service.execute(
                                     hostname=dest_node.hostname,
-                                    command=del_cmd,
+                                    command=release_cmd,
                                     port=dest_node.ssh_port,
                                     username=dest_node.ssh_user,
                                     key_path=dest_node.ssh_key_path,
@@ -297,7 +304,7 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                                     deleted_count += 1
                             
                             if deleted_count > 0:
-                                log_entry.message += f" | Retention: eliminate {deleted_count} vecchie, mantenute {job.keep_snapshots}"
+                                log_entry.message += f" | Eliminate {deleted_count} vecchie"
                 except Exception as retention_err:
                     log_entry.message += f" | Errore retention: {str(retention_err)[:50]}"
         else:
@@ -1482,8 +1489,8 @@ async def delete_snapshot(
     
     full_snapshot = f"{job.dest_dataset}@{snapshot_name}"
     
-    # Elimina snapshot
-    del_cmd = f"zfs destroy {full_snapshot}"
+    # Rilascia eventuale hold e poi elimina snapshot
+    del_cmd = f"zfs release keep {full_snapshot} 2>/dev/null; zfs destroy {full_snapshot}"
     
     result = await ssh_service.execute(
         hostname=dest_node.hostname,
