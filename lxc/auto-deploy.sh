@@ -351,11 +351,14 @@ create_container() {
     
     log_info "Creazione container..."
     
+    # Converti ROOTFS_SIZE in formato numerico (rimuovi G/GB se presente)
+    local rootfs_num=$(echo "${ROOTFS_SIZE}" | sed 's/[^0-9]//g')
+    
     # Crea container
     pct create ${CTID} \
         /var/lib/vz/template/cache/${SELECTED_TEMPLATE} \
         --storage ${STORAGE} \
-        --rootfs ${STORAGE}:${ROOTFS_SIZE} \
+        --rootfs ${STORAGE}:${rootfs_num} \
         --hostname ${CT_NAME} \
         --memory ${MEMORY} \
         --cores ${CORES} \
