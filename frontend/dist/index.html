@@ -2278,7 +2278,7 @@
                         
                         <!-- Opzioni -->
                         <h4 style="margin: 20px 0 12px; color: var(--accent-info);">⚡ Opzioni</h4>
-                        <div class="grid-2">
+                        <div class="grid-3">
                             <div class="form-group">
                                 <label class="form-label">Compressione</label>
                                 <select class="form-input" v-model="vmReplicaWizard.compress">
@@ -2289,9 +2289,14 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label class="form-label" style="display: flex; align-items: center; gap: 8px;">
+                                <label class="form-label">📸 Versioni da mantenere</label>
+                                <input type="number" class="form-input" v-model.number="vmReplicaWizard.keep_snapshots" min="0" max="100">
+                                <small style="color: var(--text-secondary);">0 = solo ultima</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" style="display: flex; align-items: center; gap: 8px; margin-top: 24px;">
                                     <input type="checkbox" v-model="vmReplicaWizard.registerVM">
-                                    Registra VM su destinazione dopo replica
+                                    Registra VM su destinazione
                                 </label>
                             </div>
                         </div>
@@ -4818,6 +4823,11 @@
                                 <option value="zstd">Zstd (efficiente)</option>
                             </select>
                         </div>
+                        <div class="form-group">
+                            <label class="form-label">📸 Versioni da mantenere</label>
+                            <input type="number" class="form-input" v-model.number="newSyncJob.keep_snapshots" min="0" max="100" placeholder="0">
+                            <small style="color: var(--text-secondary);">0 = solo ultima, N = mantieni ultime N snapshot</small>
+                        </div>
                     </div>
                     
                     <div class="grid-2">
@@ -5256,6 +5266,7 @@
                     vm_type: 'qemu',
                     notify_mode: 'daily',
                     notify_subject: '',
+                    keep_snapshots: 0,  // 0 = solo ultima, N = mantieni ultime N
                     // BTRFS support
                     sync_method: 'syncoid',
                     btrfs_snapshot_dir: '',
@@ -5436,6 +5447,7 @@
                     registerVM: true,
                     notify_mode: 'daily',
                     notify_subject: '',
+                    keep_snapshots: 7,  // Mantieni ultime 7 snapshot per default
                     // BTRFS support
                     syncMethod: 'syncoid',  // syncoid | btrfs_send
                     btrfsMount: '/mnt/btrfs-storage',
@@ -6691,6 +6703,7 @@
                             schedule: w.schedule || null,
                             compress: w.compress,
                             register_vm: w.registerVM,
+                            keep_snapshots: w.keep_snapshots || 0,
                             disks: selectedDisks,
                             // BTRFS support
                             sync_method: w.syncMethod || 'syncoid'
@@ -7001,7 +7014,7 @@
                         }
                         showSyncJobModal.value = false;
                         editingSyncJobId.value = null;
-                        newSyncJob.value = { name: '', source_node_id: '', source_dataset: '', dest_node_id: '', dest_dataset: '', schedule: '', schedulePreset: '', compress: 'lz4', recursive: false, mbuffer_size: '128M', no_sync_snap: false, force_delete: false, extra_args: '', register_vm: false, vm_id: '', dest_vm_id: '', dest_vm_name_suffix: '', vm_type: 'qemu', notify_mode: 'daily', notify_subject: '' };
+                        newSyncJob.value = { name: '', source_node_id: '', source_dataset: '', dest_node_id: '', dest_dataset: '', schedule: '', schedulePreset: '', compress: 'lz4', recursive: false, mbuffer_size: '128M', no_sync_snap: false, force_delete: false, extra_args: '', register_vm: false, vm_id: '', dest_vm_id: '', dest_vm_name_suffix: '', vm_type: 'qemu', notify_mode: 'daily', notify_subject: '', keep_snapshots: 0 };
                         sourceDatasets.value = [];
                         destDatasets.value = [];
                         selectedSchedule.value = '';
@@ -7063,7 +7076,8 @@
                         dest_vm_name_suffix: job.dest_vm_name_suffix || '',
                         vm_type: job.vm_type || 'qemu',
                         notify_mode: job.notify_mode || 'daily',
-                        notify_subject: job.notify_subject || ''
+                        notify_subject: job.notify_subject || '',
+                        keep_snapshots: job.keep_snapshots || 0
                     };
                     
                     // Estrai pool e sottopercorso dal dest_dataset

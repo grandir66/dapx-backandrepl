@@ -243,6 +243,46 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                         log_entry.message += f" | Config VM non trovata su sorgente"
                 except Exception as e:
                     log_entry.message += f" | Errore registrazione VM: {str(e)}"
+            
+            # Cleanup vecchie snapshot se retention configurata (solo per ZFS)
+            if job.keep_snapshots and job.keep_snapshots > 0 and sync_method != SyncMethod.BTRFS_SEND.value:
+                try:
+                    # Lista snapshot syncoid sul dataset destinazione
+                    list_cmd = f"zfs list -t snapshot -o name -s creation {job.dest_dataset} 2>/dev/null | grep 'syncoid_' || true"
+                    list_result = await ssh_service.execute(
+                        hostname=dest_node.hostname,
+                        command=list_cmd,
+                        port=dest_node.ssh_port,
+                        username=dest_node.ssh_user,
+                        key_path=dest_node.ssh_key_path,
+                        timeout=60
+                    )
+                    
+                    if list_result.success and list_result.stdout.strip():
+                        snapshots = [s.strip() for s in list_result.stdout.strip().split('\n') if s.strip()]
+                        
+                        # Se abbiamo più snapshot del limite, elimina le più vecchie
+                        if len(snapshots) > job.keep_snapshots:
+                            to_delete = snapshots[:-job.keep_snapshots]  # Mantieni le ultime N
+                            deleted_count = 0
+                            
+                            for snap in to_delete:
+                                del_cmd = f"zfs destroy {snap}"
+                                del_result = await ssh_service.execute(
+                                    hostname=dest_node.hostname,
+                                    command=del_cmd,
+                                    port=dest_node.ssh_port,
+                                    username=dest_node.ssh_user,
+                                    key_path=dest_node.ssh_key_path,
+                                    timeout=60
+                                )
+                                if del_result.success:
+                                    deleted_count += 1
+                            
+                            if deleted_count > 0:
+                                log_entry.message += f" | Retention: eliminate {deleted_count} snapshot vecchie, mantenute {job.keep_snapshots}"
+                except Exception as retention_err:
+                    log_entry.message += f" | Errore retention: {str(retention_err)[:50]}"
         else:
             job_record.last_status = "failed"
             job_record.error_count += 1
@@ -344,6 +384,9 @@ class SyncJobCreate(BaseModel):
     notify_mode: str = "daily"  # daily, always, failure, never
     notify_subject: Optional[str] = None
     
+    # Retention - snapshot da mantenere sulla destinazione
+    keep_snapshots: int = 0  # 0 = solo ultima, N = mantieni ultime N
+    
     # Retry
     retry_on_failure: bool = True
     max_retries: int = 3
@@ -386,6 +429,9 @@ class SyncJobUpdate(BaseModel):
     # Notifiche
     notify_mode: Optional[str] = None  # daily, always, failure, never
     notify_subject: Optional[str] = None
+    
+    # Retention
+    keep_snapshots: Optional[int] = None  # 0 = solo ultima, N = mantieni ultime N
     
     retry_on_failure: Optional[bool] = None
     max_retries: Optional[int] = None
@@ -431,6 +477,9 @@ class SyncJobResponse(BaseModel):
     # Notifiche
     notify_mode: Optional[str] = "daily"  # daily, always, failure, never
     notify_subject: Optional[str] = None
+    
+    # Retention
+    keep_snapshots: Optional[int] = 0  # 0 = solo ultima, N = mantieni ultime N
     
     retry_on_failure: bool
     max_retries: int
@@ -556,6 +605,7 @@ class VMReplicaCreate(BaseModel):
     compress: str = "lz4"
     recursive: bool = False
     register_vm: bool = True
+    keep_snapshots: int = 0  # 0 = solo ultima, N = mantieni ultime N snapshot
     disks: List[dict] = []  # Lista dischi da replicare (se vuota, replica tutti)
     
     # BTRFS options
@@ -660,6 +710,7 @@ async def create_vm_replica_jobs(
             vm_type=vm_data.vm_type,
             vm_name=vm_data.vm_name,
             dest_vm_name_suffix=vm_data.dest_vm_name_suffix,
+            keep_snapshots=vm_data.keep_snapshots,
             vm_group_id=vm_group_id,
             disk_name=disk.get("disk_name"),
             source_storage=source_storage,

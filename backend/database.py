@@ -382,6 +382,9 @@ class SyncJob(Base):
     notify_mode = Column(String(20), default="daily")  # daily, always, failure, never
     notify_subject = Column(String(200), nullable=True)
     
+    # Retention - numero di snapshot da mantenere sulla destinazione
+    keep_snapshots = Column(Integer, default=0)  # 0 = solo ultima, N = mantieni ultime N
+    
     # Retry policy
     retry_on_failure = Column(Boolean, default=True)
     max_retries = Column(Integer, default=3)
