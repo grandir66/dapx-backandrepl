@@ -100,11 +100,11 @@ class MigrationService:
                 logger.warning(f"Errore creazione snapshot: {snap_result.stderr}")
                 # Continua comunque la migrazione
         
-        # Costruisci comando di copia/migrazione
-        # qm copy <vmid> <target> [OPTIONS]
-        # pct copy <vmid> <target> [OPTIONS]
+        # Costruisci comando di migrazione
+        # qm migrate <vmid> <target> [OPTIONS] - per migrazione tra nodi
+        # pct migrate <vmid> <target> [OPTIONS] - per LXC
         
-        copy_options = []
+        migrate_options = []
         
         # Target: user@hostname
         target = f"{dest_user}@{dest_hostname}"
@@ -113,53 +113,72 @@ class MigrationService:
         
         # VMID destinazione
         if dest_vm_id and dest_vm_id != vm_id:
-            copy_options.append(f"--newid {dest_vm_id}")
-        
-        # Nome VM (se suffisso specificato, verrà modificato dopo)
-        if dest_vm_name_suffix:
-            # Non possiamo cambiare il nome durante la copia, lo faremo dopo
-            pass
+            migrate_options.append(f"--newid {dest_vm_id}")
         
         # Storage mapping (se specificato in hw_config)
-        storage_map = {}
+        # qm migrate supporta --storage per specificare storage destinazione
         if hw_config and "storage" in hw_config:
             storage_map = hw_config["storage"]
-            # qm copy supporta --storage per mappare storage
+            # Prendi il primo storage specificato (qm migrate supporta un solo --storage)
             for disk, new_storage in storage_map.items():
-                # Estrai nome storage (es: "local-lvm:vm-100-disk-0" -> "local-lvm")
                 if ":" in new_storage:
                     storage_name = new_storage.split(":")[0]
-                    copy_options.append(f"--storage {storage_name}")
-                    break  # qm copy supporta solo un --storage, useremo modifica post-copia
+                    migrate_options.append(f"--storage {storage_name}")
+                    break
         
+        # Per migrazione "copy" (non move), dobbiamo prima clonare, poi migrare
+        # Oppure usare vzdump + restore
+        if migration_type == "copy":
+            # Per copia, usiamo vzdump + restore invece di migrate
+            # migrate sposta la VM, non la copia
+            return await self._copy_vm_with_backup(
+                source_hostname=source_hostname,
+                dest_hostname=dest_hostname,
+                vm_id=vm_id,
+                vm_type=vm_type,
+                dest_vm_id=target_vmid,
+                dest_vm_name_suffix=dest_vm_name_suffix,
+                create_snapshot=create_snapshot,
+                keep_snapshots=keep_snapshots,
+                start_after=start_after,
+                hw_config=hw_config,
+                source_port=source_port,
+                source_user=source_user,
+                source_key=source_key,
+                dest_port=dest_port,
+                dest_user=dest_user,
+                dest_key=dest_key
+            )
+        
+        # Per move, usa migrate diretto
         # Costruisci comando completo
-        copy_cmd = f"{cmd} copy {vm_id} {target} {' '.join(copy_options)}"
+        migrate_cmd = f"{cmd} migrate {vm_id} {target} {' '.join(migrate_options)}"
         
-        logger.info(f"Eseguendo: {copy_cmd}")
+        logger.info(f"Eseguendo: {migrate_cmd}")
         
-        # Esegui copia
-        copy_result = await ssh_service.execute(
+        # Esegui migrazione
+        migrate_result = await ssh_service.execute(
             hostname=source_hostname,
-            command=copy_cmd,
+            command=migrate_cmd,
             port=source_port,
             username=source_user,
             key_path=source_key,
             timeout=3600  # 1 ora per migrazioni grandi
         )
         
-        if not copy_result.success:
+        if not migrate_result.success:
             return {
                 "success": False,
-                "message": f"Errore durante copia VM: {copy_result.stderr}",
-                "error": copy_result.stderr,
-                "stdout": copy_result.stdout
+                "message": f"Errore durante migrazione VM: {migrate_result.stderr}",
+                "error": migrate_result.stderr,
+                "stdout": migrate_result.stdout
             }
         
         # Estrai dimensione trasferita dall'output
         transferred = "0B"
-        if "transferred" in copy_result.stdout.lower() or "MiB" in copy_result.stdout:
+        if "transferred" in migrate_result.stdout.lower() or "MiB" in migrate_result.stdout:
             # Cerca pattern tipo "transferred 10.5 GiB"
-            match = re.search(r'(\d+\.?\d*)\s*(GiB|MiB|KiB|GB|MB|KB)', copy_result.stdout, re.IGNORECASE)
+            match = re.search(r'(\d+\.?\d*)\s*(GiB|MiB|KiB|GB|MB|KB)', migrate_result.stdout, re.IGNORECASE)
             if match:
                 transferred = f"{match.group(1)} {match.group(2)}"
         
@@ -213,6 +232,227 @@ class MigrationService:
         return {
             "success": True,
             "message": f"VM {vm_id} migrata con successo su {dest_hostname} (VMID: {target_vmid})",
+            "vm_id": target_vmid,
+            "duration": duration,
+            "transferred": transferred,
+            "snapshot_created": snapshot_name if create_snapshot else None
+        }
+    
+    async def _copy_vm_with_backup(
+        self,
+        source_hostname: str,
+        dest_hostname: str,
+        vm_id: int,
+        vm_type: str,
+        dest_vm_id: Optional[int] = None,
+        dest_vm_name_suffix: Optional[str] = None,
+        create_snapshot: bool = True,
+        keep_snapshots: int = 1,
+        start_after: bool = False,
+        hw_config: Optional[Dict] = None,
+        source_port: int = 22,
+        source_user: str = "root",
+        source_key: str = "/root/.ssh/id_rsa",
+        dest_port: int = 22,
+        dest_user: str = "root",
+        dest_key: str = "/root/.ssh/id_rsa"
+    ) -> Dict:
+        """
+        Copia VM usando vzdump + restore (per copia tra nodi senza cluster)
+        """
+        import time
+        start_time = time.time()
+        
+        # vzdump funziona per entrambi qemu e lxc
+        restore_cmd = "qmrestore" if vm_type == "qemu" else "pct restore"
+        
+        target_vmid = dest_vm_id if dest_vm_id else vm_id
+        
+        # Crea snapshot se richiesto
+        snapshot_name = None
+        if create_snapshot:
+            snapshot_name = f"migration-{int(time.time())}"
+            snap_cmd = f"{'qm' if vm_type == 'qemu' else 'pct'} snapshot {vm_id} {snapshot_name} --description 'Pre-migration snapshot'"
+            snap_result = await ssh_service.execute(
+                hostname=source_hostname,
+                command=snap_cmd,
+                port=source_port,
+                username=source_user,
+                key_path=source_key,
+                timeout=300
+            )
+            if not snap_result.success:
+                logger.warning(f"Errore creazione snapshot: {snap_result.stderr}")
+        
+        # Crea backup
+        backup_cmd = f"vzdump {vm_id} --compress zstd --storage local --dumpdir /tmp --mode snapshot --remove 0"
+        backup_result = await ssh_service.execute(
+            hostname=source_hostname,
+            command=backup_cmd,
+            port=source_port,
+            username=source_user,
+            key_path=source_key,
+            timeout=3600
+        )
+        
+        if not backup_result.success:
+            return {
+                "success": False,
+                "message": f"Errore creazione backup: {backup_result.stderr}",
+                "error": backup_result.stderr
+            }
+        
+        # Trova il file di backup creato
+        # vzdump crea file tipo: vzdump-qemu-100-2025_12_08-12_30_00.vma.zst o .tar.zst
+        find_backup_cmd = f"ls -t /tmp/vzdump-{vm_type}-{vm_id}-*.vma.zst /tmp/vzdump-{vm_type}-{vm_id}-*.tar.zst 2>/dev/null | head -1"
+        find_result = await ssh_service.execute(
+            hostname=source_hostname,
+            command=find_backup_cmd,
+            port=source_port,
+            username=source_user,
+            key_path=source_key,
+            timeout=30
+        )
+        
+        if not find_result.success or not find_result.stdout.strip():
+            return {
+                "success": False,
+                "message": "File di backup non trovato",
+                "error": "Backup creato ma file non trovato"
+            }
+        
+        backup_file = find_result.stdout.strip()
+        
+        # Trasferisci backup sul nodo destinazione
+        # Usa scp via SSH (eseguito sul nodo sorgente)
+        scp_cmd = f"scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {source_key} -P {dest_port} {backup_file} {dest_user}@{dest_hostname}:/tmp/"
+        scp_result = await ssh_service.execute(
+            hostname=source_hostname,
+            command=scp_cmd,
+            port=source_port,
+            username=source_user,
+            key_path=source_key,
+            timeout=3600
+        )
+        
+        if not scp_result.success:
+            # Cleanup backup locale
+            await ssh_service.execute(
+                hostname=source_hostname,
+                command=f"rm -f {backup_file}",
+                port=source_port,
+                username=source_user,
+                key_path=source_key
+            )
+            return {
+                "success": False,
+                "message": f"Errore trasferimento backup: {scp_result.stderr}",
+                "error": scp_result.stderr
+            }
+        
+        remote_backup = f"/tmp/{backup_file.split('/')[-1]}"
+        
+        # Restore sul nodo destinazione
+        # Determina storage destinazione
+        dest_storage = "local"
+        if hw_config and "storage" in hw_config:
+            for disk, new_storage in hw_config["storage"].items():
+                if ":" in new_storage:
+                    dest_storage = new_storage.split(":")[0]
+                    break
+        
+        # pct restore ha ordine parametri diverso: pct restore <vmid> <backup> --storage <storage>
+        if vm_type == "lxc":
+            restore_cmd = f"pct restore {target_vmid} {remote_backup} --storage {dest_storage}"
+        else:
+            restore_cmd = f"qmrestore {remote_backup} {target_vmid} --storage {dest_storage}"
+        restore_result = await ssh_service.execute(
+            hostname=dest_hostname,
+            command=restore_cmd,
+            port=dest_port,
+            username=dest_user,
+            key_path=dest_key,
+            timeout=3600
+        )
+        
+        # Cleanup backup remoto
+        await ssh_service.execute(
+            hostname=dest_hostname,
+            command=f"rm -f {remote_backup}",
+            port=dest_port,
+            username=dest_user,
+            key_path=dest_key
+        )
+        
+        # Cleanup backup locale
+        await ssh_service.execute(
+            hostname=source_hostname,
+            command=f"rm -f {backup_file}",
+            port=source_port,
+            username=source_user,
+            key_path=source_key
+        )
+        
+        if not restore_result.success:
+            return {
+                "success": False,
+                "message": f"Errore restore: {restore_result.stderr}",
+                "error": restore_result.stderr
+            }
+        
+        # Estrai dimensione trasferita
+        transferred = "0B"
+        if "transferred" in restore_result.stdout.lower() or "MiB" in restore_result.stdout:
+            match = re.search(r'(\d+\.?\d*)\s*(GiB|MiB|KiB|GB|MB|KB)', restore_result.stdout, re.IGNORECASE)
+            if match:
+                transferred = f"{match.group(1)} {match.group(2)}"
+        
+        # Applica riconfigurazione hardware
+        if hw_config:
+            hw_result = await self._apply_hw_config(
+                hostname=dest_hostname,
+                vm_id=target_vmid,
+                vm_type=vm_type,
+                hw_config=hw_config,
+                dest_vm_name_suffix=dest_vm_name_suffix,
+                port=dest_port,
+                username=dest_user,
+                key_path=dest_key
+            )
+            if not hw_result["success"]:
+                logger.warning(f"Errore applicazione config hardware: {hw_result.get('message')}")
+        
+        # Gestione snapshot
+        if snapshot_name and keep_snapshots > 0:
+            await self._prune_snapshots(
+                hostname=source_hostname,
+                vm_id=vm_id,
+                vm_type=vm_type,
+                keep=keep_snapshots,
+                port=source_port,
+                username=source_user,
+                key_path=source_key
+            )
+        
+        # Avvia VM se richiesto
+        if start_after:
+            start_cmd = f"{'qm' if vm_type == 'qemu' else 'pct'} start {target_vmid}"
+            start_result = await ssh_service.execute(
+                hostname=dest_hostname,
+                command=start_cmd,
+                port=dest_port,
+                username=dest_user,
+                key_path=dest_key,
+                timeout=60
+            )
+            if not start_result.success:
+                logger.warning(f"Errore avvio VM: {start_result.stderr}")
+        
+        duration = int(time.time() - start_time)
+        
+        return {
+            "success": True,
+            "message": f"VM {vm_id} copiata con successo su {dest_hostname} (VMID: {target_vmid})",
             "vm_id": target_vmid,
             "duration": duration,
             "transferred": transferred,
