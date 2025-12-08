@@ -5,7 +5,7 @@ Con autenticazione e autorizzazione
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -87,9 +87,9 @@ class NodeResponse(BaseModel):
     ssh_key_path: str
     # Node type
     node_type: Optional[str] = "pve"
-    proxmox_api_url: Optional[str]
-    proxmox_verify_ssl: bool
-    is_auth_node: bool
+    proxmox_api_url: Optional[str] = None
+    proxmox_verify_ssl: bool = False
+    is_auth_node: bool = False
     # PBS specific
     pbs_datastore: Optional[str] = None
     pbs_fingerprint: Optional[str] = None
@@ -103,12 +103,17 @@ class NodeResponse(BaseModel):
     btrfs_available: Optional[bool] = False
     btrfs_version: Optional[str] = None
     # Status
-    is_active: bool
-    is_online: bool
-    last_check: Optional[datetime]
-    sanoid_installed: bool
-    sanoid_version: Optional[str]
-    created_at: datetime
+    is_active: bool = True
+    is_online: bool = False
+    last_check: Optional[datetime] = None
+    sanoid_installed: bool = False
+    sanoid_version: Optional[str] = None
+    created_at: Optional[datetime] = None
+    # SSH setup info (solo per creazione)
+    ssh_key_setup: Optional[Dict[str, Any]] = None
+    
+    class Config:
+        from_attributes = True
     notes: Optional[str]
     
     class Config:
