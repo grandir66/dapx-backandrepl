@@ -74,17 +74,18 @@ apt-get install -y \
     libffi-dev \
     python3-dev
 
-# Clona repository
+# Clona repository (direttamente nella directory di installazione per mantenere .git)
 log_info "Download applicazione..."
 if [ -d "${INSTALL_DIR}/.git" ]; then
     log_info "Repository già presente, aggiornamento..."
     cd ${INSTALL_DIR}
-    git pull
+    git fetch origin
+    git reset --hard origin/main
 else
-    cd /tmp
-    git clone https://github.com/${GITHUB_REPO}.git dapx-backandrepl
-    mv dapx-backandrepl/* ${INSTALL_DIR}/
-    rm -rf dapx-backandrepl
+    # Rimuovi directory se esiste ma senza .git
+    rm -rf ${INSTALL_DIR}
+    # Clona direttamente nella directory di installazione
+    git clone https://github.com/${GITHUB_REPO}.git ${INSTALL_DIR}
 fi
 
 # Installa dipendenze Python
