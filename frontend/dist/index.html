@@ -4082,11 +4082,43 @@
                     
                     <!-- SSL/HTTPS Settings Tab -->
                     <div class="card" v-if="settingsTab === 'ssl' && isAdmin">
-                        <h3 class="card-title" style="margin-bottom: 20px;">🔒 Configurazione SSL/HTTPS</h3>
+                        <h3 class="card-title" style="margin-bottom: 20px;">🔒 Configurazione Server & SSL</h3>
+                        
+                        <!-- Configurazione Server -->
+                        <div style="background: linear-gradient(135deg, rgba(0, 200, 83, 0.1), rgba(0, 176, 255, 0.1)); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 1px solid var(--accent-primary);">
+                            <h4 style="margin-bottom: 16px; color: var(--accent-primary);">⚙️ Configurazione Server</h4>
+                            <div class="grid-2" style="gap: 20px;">
+                                <div class="form-group">
+                                    <label class="form-label">Porta Web Server</label>
+                                    <input type="number" class="form-input" v-model="serverConfig.port" min="1" max="65535" style="max-width: 150px;">
+                                    <small style="color: var(--text-secondary); display: block; margin-top: 4px;">Porta attuale: {{ serverConfig.current_port || serverConfig.port }}</small>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" style="display: flex; align-items: center; gap: 8px;">
+                                        <input type="checkbox" v-model="serverConfig.ssl_enabled" :disabled="!sslStatus?.ssl_ready" style="width: auto;">
+                                        Abilita HTTPS
+                                    </label>
+                                    <small v-if="!sslStatus?.ssl_ready" style="color: var(--accent-warning); display: block; margin-top: 4px;">
+                                        ⚠️ Genera o carica un certificato prima di abilitare HTTPS
+                                    </small>
+                                </div>
+                            </div>
+                            <div style="margin-top: 16px; display: flex; gap: 12px; align-items: center;">
+                                <button class="btn btn-primary" @click="saveServerConfig" :disabled="sslLoading">
+                                    💾 Salva Configurazione
+                                </button>
+                                <button class="btn btn-warning" @click="restartServer" :disabled="sslLoading" v-if="serverConfig.restart_required">
+                                    🔄 Riavvia per Applicare
+                                </button>
+                                <span v-if="serverConfig.restart_required" style="color: var(--accent-warning); font-size: 14px;">
+                                    ⚠️ Riavvio richiesto per applicare le modifiche
+                                </span>
+                            </div>
+                        </div>
                         
                         <!-- Stato Corrente -->
                         <div style="background: var(--bg-tertiary); padding: 16px; border-radius: 8px; margin-bottom: 20px;">
-                            <h4 style="margin-bottom: 12px; color: var(--accent-secondary);">📊 Stato Corrente</h4>
+                            <h4 style="margin-bottom: 12px; color: var(--accent-secondary);">📊 Stato SSL/HTTPS</h4>
                             <div class="grid-2" v-if="sslStatus">
                                 <div>
                                     <div style="margin-bottom: 8px;">
@@ -4170,17 +4202,15 @@
                             </button>
                         </div>
                         
-                        <!-- Istruzioni Attivazione HTTPS -->
+                        <!-- Istruzioni -->
                         <div style="background: var(--bg-tertiary); padding: 16px; border-radius: 8px;">
-                            <h4 style="margin-bottom: 12px; color: var(--accent-warning);">📋 Come Attivare HTTPS</h4>
-                            <p style="color: var(--text-secondary); margin-bottom: 12px; font-size: 14px;">
-                                Dopo aver generato o caricato il certificato, riavvia il server con SSL:
-                            </p>
-                            <pre style="background: var(--bg-primary); padding: 12px; border-radius: 4px; overflow-x: auto; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent-primary);">./start.sh --ssl</pre>
-                            <p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">
-                                Oppure con variabili d'ambiente per certificati custom:
-                            </p>
-                            <pre style="background: var(--bg-primary); padding: 12px; border-radius: 4px; overflow-x: auto; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent-secondary);">DAPX_SSL_CERT=/path/to/cert.pem DAPX_SSL_KEY=/path/to/key.pem ./start.sh --ssl</pre>
+                            <h4 style="margin-bottom: 12px; color: var(--accent-warning);">📋 Note</h4>
+                            <ul style="color: var(--text-secondary); font-size: 14px; padding-left: 20px; margin: 0;">
+                                <li style="margin-bottom: 8px;">Genera o carica un certificato SSL prima di abilitare HTTPS</li>
+                                <li style="margin-bottom: 8px;">Dopo aver modificato porta o SSL, clicca "Riavvia per Applicare"</li>
+                                <li style="margin-bottom: 8px;">Se cambi porta, aggiorna l'URL nel browser (es: https://server:8443)</li>
+                                <li>I certificati auto-firmati mostreranno un avviso nel browser (normale)</li>
+                            </ul>
                         </div>
                         
                         <!-- Elimina Certificato -->
@@ -6046,6 +6076,14 @@
                 const sslGenDays = ref(365);
                 const sslGenIps = ref('');
                 const sslUploadCert = ref('');
+                
+                // Server Configuration (Port, HTTPS)
+                const serverConfig = ref({
+                    port: 8420,
+                    ssl_enabled: false,
+                    restart_required: false,
+                    current_port: null
+                });
                 const sslUploadKey = ref('');
                 
                 // VM Snapshot Management
@@ -8818,6 +8856,8 @@
                     try {
                         const res = await axios.get(`${API}/settings/ssl/status`);
                         sslStatus.value = res.data;
+                        // Carica anche configurazione server
+                        await loadServerConfig();
                     } catch (e) {
                         console.error('Errore caricamento stato SSL:', e);
                     }
@@ -8870,6 +8910,77 @@
                         showToast(e.response?.data?.detail || 'Errore eliminazione certificato', 'error');
                     }
                     sslLoading.value = false;
+                };
+                
+                // Server Configuration (Port, HTTPS)
+                const loadServerConfig = async () => {
+                    try {
+                        const res = await axios.get(`${API}/settings/server/config`);
+                        serverConfig.value = {
+                            ...res.data,
+                            current_port: window.location.port || (window.location.protocol === 'https:' ? 443 : 80)
+                        };
+                    } catch (e) {
+                        console.error('Errore caricamento configurazione server:', e);
+                    }
+                };
+                
+                const saveServerConfig = async () => {
+                    sslLoading.value = true;
+                    try {
+                        const res = await axios.put(`${API}/settings/server/config`, {
+                            port: serverConfig.value.port,
+                            ssl_enabled: serverConfig.value.ssl_enabled
+                        });
+                        if (res.data.restart_required) {
+                            serverConfig.value.restart_required = true;
+                            showToast('Configurazione salvata. Riavvia il servizio per applicare.', 'success');
+                        } else {
+                            showToast('Nessuna modifica', 'info');
+                        }
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore salvataggio configurazione', 'error');
+                    }
+                    sslLoading.value = false;
+                };
+                
+                const restartServer = async () => {
+                    const confirmed = await Swal.fire({
+                        title: 'Riavvio Server',
+                        html: `
+                            <p>Il server verrà riavviato per applicare le modifiche.</p>
+                            <p style="color: var(--accent-warning); margin-top: 12px;">
+                                <strong>⚠️ La connessione verrà persa durante il riavvio.</strong>
+                            </p>
+                            ${serverConfig.value.port != serverConfig.value.current_port ? 
+                                `<p style="color: var(--accent-primary); margin-top: 12px;">
+                                    Dopo il riavvio, accedi a: <br>
+                                    <code>${serverConfig.value.ssl_enabled ? 'https' : 'http'}://${window.location.hostname}:${serverConfig.value.port}</code>
+                                </p>` : ''}
+                        `,
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: '🔄 Riavvia',
+                        cancelButtonText: 'Annulla',
+                        confirmButtonColor: '#f57c00'
+                    });
+                    
+                    if (!confirmed.isConfirmed) return;
+                    
+                    sslLoading.value = true;
+                    try {
+                        await axios.post(`${API}/settings/server/restart`);
+                        showToast('Riavvio in corso...', 'info');
+                        
+                        // Attendi e poi ricarica alla nuova URL
+                        setTimeout(() => {
+                            const newUrl = `${serverConfig.value.ssl_enabled ? 'https' : 'http'}://${window.location.hostname}:${serverConfig.value.port}`;
+                            window.location.href = newUrl;
+                        }, 5000);
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore riavvio', 'error');
+                        sslLoading.value = false;
+                    }
                 };
                 
                 // Crea job da VM
@@ -9277,8 +9388,9 @@
                     // SSH Keys functions
                     loadSSHKeyInfo, generateSSHKey, regenerateSSHKey, copyPublicKey,
                     testAllSSHConnections, testSingleSSH, distributeSingleKey, distributeKeyToSelected,
-                    // SSL/HTTPS
+                    // SSL/HTTPS & Server Config
                     sslStatus, sslLoading, sslGenHostname, sslGenDays, sslGenIps, sslUploadCert, sslUploadKey,
+                    serverConfig, loadServerConfig, saveServerConfig, restartServer,
                     loadSslStatus, generateSslCert, uploadSslCert, deleteSslCert,
                     // Updates
                     updateInfo, updateStatus, updateLoading, checkForUpdates, startUpdate, getUpdateStatus,

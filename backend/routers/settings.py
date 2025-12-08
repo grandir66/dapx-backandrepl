@@ -695,6 +695,218 @@ async def delete_ssl_certificate(
         return {"success": False, "message": "Nessun certificato da eliminare"}
 
 
+# ============== Server Configuration (Port, HTTPS) ==============
+
+CONFIG_FILE = Path(__file__).parent.parent / "server_config.json"
+
+
+def load_server_config() -> dict:
+    """Carica la configurazione del server"""
+    default_config = {
+        "port": int(os.environ.get("DAPX_PORT", 8420)),
+        "ssl_enabled": os.environ.get("DAPX_SSL", "false").lower() == "true"
+    }
+    
+    if CONFIG_FILE.exists():
+        try:
+            import json
+            with open(CONFIG_FILE, "r") as f:
+                saved_config = json.load(f)
+                default_config.update(saved_config)
+        except Exception:
+            pass
+    
+    return default_config
+
+
+def save_server_config(config: dict):
+    """Salva la configurazione del server"""
+    import json
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(config, f, indent=2)
+
+
+@router.get("/server/config", response_model=ServerConfigResponse)
+async def get_server_config(
+    user: User = Depends(get_current_user)
+):
+    """Ottiene la configurazione del server (porta, HTTPS)"""
+    config = load_server_config()
+    cert_path = CERTS_DIR / "server.crt"
+    key_path = CERTS_DIR / "server.key"
+    
+    # Verifica se c'è una configurazione pendente (diversa da quella attuale)
+    current_port = int(os.environ.get("DAPX_PORT", 8420))
+    current_ssl = os.environ.get("DAPX_SSL", "false").lower() == "true"
+    
+    restart_required = (
+        config.get("port") != current_port or
+        config.get("ssl_enabled") != current_ssl
+    )
+    
+    return ServerConfigResponse(
+        port=config.get("port", 8420),
+        ssl_enabled=config.get("ssl_enabled", False),
+        ssl_ready=cert_path.exists() and key_path.exists(),
+        cert_exists=cert_path.exists(),
+        key_exists=key_path.exists(),
+        restart_required=restart_required
+    )
+
+
+@router.put("/server/config")
+async def update_server_config(
+    config_update: ServerConfigUpdate,
+    request: Request,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Aggiorna la configurazione del server.
+    
+    ⚠️ Le modifiche richiedono un riavvio del servizio per essere applicate.
+    """
+    config = load_server_config()
+    changes = []
+    
+    if config_update.port is not None:
+        if config_update.port < 1 or config_update.port > 65535:
+            raise HTTPException(status_code=400, detail="Porta non valida (1-65535)")
+        if config_update.port != config.get("port"):
+            changes.append(f"port: {config.get('port')} -> {config_update.port}")
+            config["port"] = config_update.port
+    
+    if config_update.ssl_enabled is not None:
+        # Se si vuole abilitare SSL, verifica che esistano i certificati
+        if config_update.ssl_enabled:
+            cert_path = CERTS_DIR / "server.crt"
+            key_path = CERTS_DIR / "server.key"
+            if not cert_path.exists() or not key_path.exists():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Impossibile abilitare HTTPS: certificato o chiave mancante. Genera o carica prima un certificato."
+                )
+        
+        if config_update.ssl_enabled != config.get("ssl_enabled"):
+            changes.append(f"ssl_enabled: {config.get('ssl_enabled')} -> {config_update.ssl_enabled}")
+            config["ssl_enabled"] = config_update.ssl_enabled
+    
+    if changes:
+        save_server_config(config)
+        
+        # Aggiorna anche il file di servizio systemd se possibile
+        await update_systemd_service(config)
+        
+        log_audit(
+            db, user.id, "server_config_updated", "server",
+            details=f"Changes: {', '.join(changes)}",
+            ip_address=request.client.host if request.client else None
+        )
+        
+        return {
+            "success": True,
+            "message": "Configurazione salvata. Riavvia il servizio per applicare le modifiche.",
+            "changes": changes,
+            "restart_required": True,
+            "config": config
+        }
+    
+    return {
+        "success": True,
+        "message": "Nessuna modifica",
+        "restart_required": False,
+        "config": config
+    }
+
+
+async def update_systemd_service(config: dict):
+    """Aggiorna il file di servizio systemd con la nuova configurazione"""
+    service_file = Path("/etc/systemd/system/dapx-backandrepl.service")
+    
+    if not service_file.exists():
+        return
+    
+    try:
+        content = service_file.read_text()
+        lines = content.split('\n')
+        new_lines = []
+        
+        port = config.get("port", 8420)
+        ssl_enabled = config.get("ssl_enabled", False)
+        cert_dir = str(CERTS_DIR)
+        
+        # Costruisci il comando ExecStart
+        if ssl_enabled:
+            exec_start = f'ExecStart=/usr/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port {port} --ssl-keyfile {cert_dir}/server.key --ssl-certfile {cert_dir}/server.crt'
+        else:
+            exec_start = f'ExecStart=/usr/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port {port}'
+        
+        for line in lines:
+            if line.strip().startswith('ExecStart='):
+                new_lines.append(exec_start)
+            elif line.strip().startswith('Environment="DAPX_PORT='):
+                new_lines.append(f'Environment="DAPX_PORT={port}"')
+            elif line.strip().startswith('Environment="DAPX_SSL='):
+                new_lines.append(f'Environment="DAPX_SSL={str(ssl_enabled).lower()}"')
+            else:
+                new_lines.append(line)
+        
+        # Scrivi il file aggiornato
+        service_file.write_text('\n'.join(new_lines))
+        
+        # Ricarica systemd
+        os.system('systemctl daemon-reload')
+        
+    except Exception as e:
+        logger.warning(f"Impossibile aggiornare servizio systemd: {e}")
+
+
+@router.post("/server/restart")
+async def restart_server(
+    request: Request,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Riavvia il servizio dapx-backandrepl.
+    
+    ⚠️ La connessione verrà persa durante il riavvio.
+    """
+    log_audit(
+        db, user.id, "server_restart", "server",
+        details="Manual restart requested",
+        ip_address=request.client.host if request.client else None
+    )
+    
+    # Programma il riavvio in background
+    import asyncio
+    
+    async def delayed_restart():
+        await asyncio.sleep(1)  # Attendi 1 secondo per permettere la risposta
+        os.system('systemctl restart dapx-backandrepl')
+    
+    asyncio.create_task(delayed_restart())
+    
+    return {
+        "success": True,
+        "message": "Riavvio in corso... La pagina si ricaricherà automaticamente."
+    }
+
+
+class ServerConfigUpdate(BaseModel):
+    port: Optional[int] = None
+    ssl_enabled: Optional[bool] = None
+    
+
+class ServerConfigResponse(BaseModel):
+    port: int
+    ssl_enabled: bool
+    ssl_ready: bool
+    cert_exists: bool
+    key_exists: bool
+    restart_required: bool
+
+
 class DatabaseResetRequest(BaseModel):
     confirm: bool = False
     backup: bool = True  # Crea backup prima del reset
