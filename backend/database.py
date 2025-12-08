@@ -378,6 +378,10 @@ class SyncJob(Base):
     source_storage = Column(String(100), nullable=True)  # Storage Proxmox sorgente (es: local-zfs)
     dest_storage = Column(String(100), nullable=True)  # Storage Proxmox destinazione (es: replica-zfs)
     
+    # Notifiche
+    notify_mode = Column(String(20), default="daily")  # daily, always, failure, never
+    notify_subject = Column(String(200), nullable=True)
+    
     # Retry policy
     retry_on_failure = Column(Boolean, default=True)
     max_retries = Column(Integer, default=3)
