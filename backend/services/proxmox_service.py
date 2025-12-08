@@ -241,6 +241,106 @@ class ProxmoxService:
             size_bytes /= 1024
         return f"{size_bytes:.1f} PB"
 
+    async def get_node_bridges(
+        self,
+        hostname: str,
+        port: int = 22,
+        username: str = "root",
+        key_path: str = "/root/.ssh/id_rsa"
+    ) -> List[str]:
+        """Ottiene la lista dei bridge di rete disponibili sul nodo"""
+        
+        result = await ssh_service.execute(
+            hostname=hostname,
+            command="ip link show type bridge | grep -oP '(?<=: )vmbr[^:@]+' | sort -u",
+            port=port,
+            username=username,
+            key_path=key_path
+        )
+        
+        bridges = []
+        if result.success and result.stdout.strip():
+            bridges = [b.strip() for b in result.stdout.strip().split('\n') if b.strip()]
+        
+        return bridges
+
+    async def get_node_cpu_info(
+        self,
+        hostname: str,
+        port: int = 22,
+        username: str = "root",
+        key_path: str = "/root/.ssh/id_rsa"
+    ) -> Dict:
+        """Ottiene informazioni sulla CPU del nodo"""
+        
+        result = await ssh_service.execute(
+            hostname=hostname,
+            command="lscpu | grep -E 'Model name|Flags' | head -2",
+            port=port,
+            username=username,
+            key_path=key_path
+        )
+        
+        cpu_info = {
+            "model": "Unknown",
+            "supports_avx512": False,
+            "supports_avx2": False
+        }
+        
+        if result.success and result.stdout.strip():
+            for line in result.stdout.strip().split('\n'):
+                if 'Model name' in line:
+                    cpu_info["model"] = line.split(':')[1].strip() if ':' in line else "Unknown"
+                if 'Flags' in line:
+                    flags = line.lower()
+                    cpu_info["supports_avx512"] = 'avx512' in flags
+                    cpu_info["supports_avx2"] = 'avx2' in flags
+        
+        return cpu_info
+
+    async def get_vm_network_bridges(
+        self,
+        hostname: str,
+        vmid: int,
+        vm_type: str = "qemu",
+        port: int = 22,
+        username: str = "root",
+        key_path: str = "/root/.ssh/id_rsa"
+    ) -> List[str]:
+        """Ottiene i bridge di rete usati da una VM"""
+        
+        success, config = await self.get_vm_config(hostname, vmid, vm_type, port, username, key_path)
+        
+        if not success:
+            return []
+        
+        # Cerca pattern: net0: virtio=...,bridge=vmbr0,...
+        bridge_pattern = r'bridge=([^,\s]+)'
+        bridges = re.findall(bridge_pattern, config)
+        
+        return list(set(bridges))
+
+    async def get_vm_cpu_type(
+        self,
+        hostname: str,
+        vmid: int,
+        port: int = 22,
+        username: str = "root",
+        key_path: str = "/root/.ssh/id_rsa"
+    ) -> str:
+        """Ottiene il tipo di CPU configurato per una VM"""
+        
+        success, config = await self.get_vm_config(hostname, vmid, "qemu", port, username, key_path)
+        
+        if not success:
+            return "host"
+        
+        # Cerca pattern: cpu: x86-64-v4
+        cpu_pattern = r'^cpu:\s*(.+)$'
+        match = re.search(cpu_pattern, config, re.MULTILINE)
+        
+        return match.group(1).strip() if match else "host"
+
     async def find_vm_dataset(
         self,
         hostname: str,
@@ -395,10 +495,12 @@ class ProxmoxService:
         dest_storage: Optional[str] = None,
         dest_zfs_pool: Optional[str] = None,
         vm_name_suffix: Optional[str] = None,
+        force_cpu_host: bool = True,
+        dest_node_bridges: Optional[List[str]] = None,
         port: int = 22,
         username: str = "root",
         key_path: str = "/root/.ssh/id_rsa"
-    ) -> Tuple[bool, str]:
+    ) -> Tuple[bool, str, List[str]]:
         """
         Registra una VM replicata su Proxmox
         
@@ -406,7 +508,11 @@ class ProxmoxService:
         Se dest_storage è specificato, sostituisce lo storage nella config.
         Se dest_zfs_pool è specificato, crea lo storage se non esiste.
         Se vm_name_suffix è specificato, aggiunge il suffisso al nome della VM.
+        Se force_cpu_host è True, cambia il tipo CPU a 'host'.
+        
+        Ritorna: (success, message, warnings)
         """
+        warnings = []
         
         if vm_type == "qemu":
             config_path = f"/etc/pve/qemu-server/{vmid}.conf"
@@ -424,7 +530,7 @@ class ProxmoxService:
         )
         
         if result.success and ("status:" in result.stdout or "running" in result.stdout or "stopped" in result.stdout):
-            return False, f"VMID {vmid} già in uso su questo nodo"
+            return False, f"VMID {vmid} già in uso su questo nodo", []
         
         # Se abbiamo un dest_storage e dest_zfs_pool, creiamo/verifichiamo lo storage
         if dest_storage and dest_zfs_pool:
@@ -437,9 +543,11 @@ class ProxmoxService:
                 key_path=key_path
             )
             if not storage_ok:
-                return False, f"Errore storage: {storage_msg}"
+                return False, f"Errore storage: {storage_msg}", []
         
         if config_content:
+            import re
+            
             # Se abbiamo source_storage e dest_storage, sostituisci nella config
             if source_storage and dest_storage and source_storage != dest_storage:
                 # Sostituisci il nome dello storage (es: local-zfs: -> replica-storage:)
@@ -447,7 +555,6 @@ class ProxmoxService:
             
             # Se abbiamo un suffisso per il nome VM, aggiungiamolo
             if vm_name_suffix:
-                import re
                 # Cerca la linea "name: xxx" e aggiungi il suffisso
                 name_pattern = re.compile(r'^(name:\s*)(.+)$', re.MULTILINE)
                 match = name_pattern.search(config_content)
@@ -455,6 +562,23 @@ class ProxmoxService:
                     original_name = match.group(2).strip()
                     new_name = original_name + vm_name_suffix
                     config_content = name_pattern.sub(f'name: {new_name}', config_content)
+            
+            # Forza CPU type a 'host' per compatibilità tra host diversi
+            if force_cpu_host and vm_type == "qemu":
+                cpu_pattern = re.compile(r'^cpu:\s*.+$', re.MULTILINE)
+                if cpu_pattern.search(config_content):
+                    old_cpu = cpu_pattern.search(config_content).group(0)
+                    config_content = cpu_pattern.sub('cpu: host', config_content)
+                    warnings.append(f"CPU cambiata da '{old_cpu}' a 'cpu: host' per compatibilità")
+            
+            # Verifica bridge di rete
+            if dest_node_bridges:
+                net_pattern = re.compile(r'^(net\d+):.+bridge=([^,\s]+)', re.MULTILINE)
+                for match in net_pattern.finditer(config_content):
+                    net_iface = match.group(1)
+                    bridge = match.group(2)
+                    if bridge not in dest_node_bridges:
+                        warnings.append(f"⚠️ RETE: {net_iface} usa bridge '{bridge}' che non esiste sul nodo destinazione. Bridge disponibili: {', '.join(dest_node_bridges)}")
             
             # Crea il file di configurazione
             cmd = f"""
@@ -473,7 +597,7 @@ echo "Configuration created"
             )
             
             if not result.success:
-                return False, f"Errore creazione config: {result.stderr}"
+                return False, f"Errore creazione config: {result.stderr}", warnings
         
         # Verifica registrazione
         verify_cmd = f"{'qm' if vm_type == 'qemu' else 'pct'} status {vmid}"
@@ -486,9 +610,9 @@ echo "Configuration created"
         )
         
         if result.success:
-            return True, f"VM {vmid} registrata con successo"
+            return True, f"VM {vmid} registrata con successo", warnings
         else:
-            return False, f"Verifica fallita: {result.stderr}"
+            return False, f"Verifica fallita: {result.stderr}", warnings
     
     async def unregister_vm(
         self,

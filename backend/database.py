@@ -369,6 +369,7 @@ class SyncJob(Base):
     vm_type = Column(String(10), nullable=True)  # qemu o lxc
     vm_name = Column(String(100), nullable=True)
     dest_vm_name_suffix = Column(String(50), nullable=True)  # Suffisso per nome VM su destinazione (es: -replica)
+    force_cpu_host = Column(Boolean, default=True)  # Forza CPU type a 'host' su destinazione
     
     # Grouping - per raggruppare job multipli di una stessa VM
     vm_group_id = Column(String(50), nullable=True)  # UUID gruppo (tutti i dischi di una VM)

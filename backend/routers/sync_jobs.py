@@ -404,6 +404,7 @@ class SyncJobCreate(BaseModel):
     vm_name: Optional[str] = None
     dest_vm_name_suffix: Optional[str] = None  # Suffisso per nome VM su destinazione (es: -replica)
     disk_name: Optional[str] = None  # Nome disco (per BTRFS)
+    force_cpu_host: bool = True  # Forza CPU type a 'host' su destinazione per compatibilità
     
     # Notifiche
     notify_mode: str = "daily"  # daily, always, failure, never
@@ -448,6 +449,7 @@ class SyncJobUpdate(BaseModel):
     vm_name: Optional[str] = None
     dest_vm_name_suffix: Optional[str] = None  # Suffisso per nome VM su destinazione
     disk_name: Optional[str] = None
+    force_cpu_host: Optional[bool] = None  # Forza CPU type a 'host' su destinazione
     source_storage: Optional[str] = None  # Storage Proxmox sorgente
     dest_storage: Optional[str] = None  # Storage Proxmox destinazione
     
@@ -494,6 +496,7 @@ class SyncJobResponse(BaseModel):
     vm_type: Optional[str]
     vm_name: Optional[str]
     dest_vm_name_suffix: Optional[str] = None
+    force_cpu_host: Optional[bool] = True
     vm_group_id: Optional[str]
     disk_name: Optional[str]
     source_storage: Optional[str] = None
@@ -543,6 +546,142 @@ def check_job_access(user: User, job: SyncJob, db: Session) -> bool:
 
 
 # ============== Endpoints ==============
+
+@router.get("/check-compatibility")
+async def check_vm_compatibility(
+    source_node_id: int,
+    dest_node_id: int,
+    vm_id: int,
+    vm_type: str = "qemu",
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Verifica compatibilità per replica VM tra sorgente e destinazione.
+    Controlla: CPU, bridge di rete, storage ZFS.
+    """
+    from services.proxmox_service import proxmox_service
+    
+    source_node = db.query(Node).filter(Node.id == source_node_id).first()
+    dest_node = db.query(Node).filter(Node.id == dest_node_id).first()
+    
+    if not source_node or not dest_node:
+        raise HTTPException(status_code=404, detail="Nodi non trovati")
+    
+    warnings = []
+    info = {}
+    
+    try:
+        # 1. Ottieni bridge della VM sorgente
+        vm_bridges = await proxmox_service.get_vm_network_bridges(
+            hostname=source_node.hostname,
+            vmid=vm_id,
+            vm_type=vm_type,
+            port=source_node.ssh_port,
+            username=source_node.ssh_user,
+            key_path=source_node.ssh_key_path
+        )
+        info["source_vm_bridges"] = vm_bridges
+        
+        # 2. Ottieni bridge disponibili su destinazione
+        dest_bridges = await proxmox_service.get_node_bridges(
+            hostname=dest_node.hostname,
+            port=dest_node.ssh_port,
+            username=dest_node.ssh_user,
+            key_path=dest_node.ssh_key_path
+        )
+        info["dest_node_bridges"] = dest_bridges
+        
+        # 3. Verifica compatibilità bridge
+        missing_bridges = [b for b in vm_bridges if b not in dest_bridges]
+        if missing_bridges:
+            warnings.append({
+                "type": "network",
+                "level": "warning",
+                "message": f"Bridge di rete non presenti su destinazione: {', '.join(missing_bridges)}",
+                "details": f"La VM usa: {', '.join(vm_bridges)}. Disponibili su {dest_node.name}: {', '.join(dest_bridges) if dest_bridges else 'nessuno'}"
+            })
+        
+        # 4. Ottieni tipo CPU della VM
+        if vm_type == "qemu":
+            vm_cpu = await proxmox_service.get_vm_cpu_type(
+                hostname=source_node.hostname,
+                vmid=vm_id,
+                port=source_node.ssh_port,
+                username=source_node.ssh_user,
+                key_path=source_node.ssh_key_path
+            )
+            info["source_vm_cpu"] = vm_cpu
+            
+            # 5. Ottieni info CPU destinazione
+            dest_cpu_info = await proxmox_service.get_node_cpu_info(
+                hostname=dest_node.hostname,
+                port=dest_node.ssh_port,
+                username=dest_node.ssh_user,
+                key_path=dest_node.ssh_key_path
+            )
+            info["dest_cpu"] = dest_cpu_info
+            
+            # 6. Verifica compatibilità CPU
+            if vm_cpu and vm_cpu != "host":
+                # CPU specifiche che richiedono AVX512
+                avx512_cpus = ["x86-64-v4", "Cascadelake", "Icelake", "Sapphire"]
+                needs_avx512 = any(cpu in vm_cpu for cpu in avx512_cpus)
+                
+                if needs_avx512 and not dest_cpu_info.get("supports_avx512"):
+                    warnings.append({
+                        "type": "cpu",
+                        "level": "error",
+                        "message": f"CPU '{vm_cpu}' non supportata su destinazione",
+                        "details": f"La CPU del nodo {dest_node.name} ({dest_cpu_info.get('model', 'Unknown')}) non supporta AVX-512. Attiva 'Forza CPU host' per risolvere."
+                    })
+        
+        # 7. Verifica storage ZFS replica
+        from services.ssh_service import ssh_service
+        
+        # Controlla se esiste lo storage "replica" su destinazione
+        storage_check = await ssh_service.execute(
+            hostname=dest_node.hostname,
+            command="pvesm status | grep -E '^replica\\s'",
+            port=dest_node.ssh_port,
+            username=dest_node.ssh_user,
+            key_path=dest_node.ssh_key_path
+        )
+        
+        if not storage_check.success or not storage_check.stdout.strip():
+            # Verifica se esiste il dataset zfs/replica
+            zfs_check = await ssh_service.execute(
+                hostname=dest_node.hostname,
+                command="zfs list -H -o name | grep -E '^[^/]+/replica$' | head -1",
+                port=dest_node.ssh_port,
+                username=dest_node.ssh_user,
+                key_path=dest_node.ssh_key_path
+            )
+            
+            if zfs_check.success and zfs_check.stdout.strip():
+                pool_name = zfs_check.stdout.strip()
+                warnings.append({
+                    "type": "storage",
+                    "level": "info",
+                    "message": f"Storage 'replica' non registrato su {dest_node.name}",
+                    "details": f"Dataset ZFS '{pool_name}' esiste ma non è registrato come storage Proxmox. Verrà creato automaticamente durante la registrazione VM."
+                })
+            else:
+                # Il dataset non esiste - verrà creato da syncoid
+                info["dest_storage_status"] = "will_be_created"
+        else:
+            info["dest_storage_status"] = "exists"
+        
+        return {
+            "compatible": len([w for w in warnings if w["level"] == "error"]) == 0,
+            "warnings": warnings,
+            "info": info
+        }
+        
+    except Exception as e:
+        logger.error(f"Errore verifica compatibilità: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/", response_model=List[SyncJobResponseWithNodes])
 async def list_sync_jobs(
@@ -1174,9 +1313,18 @@ async def register_vm_manually(
     if not dest_zfs_pool:
         dest_zfs_pool = job.dest_dataset.split("/")[0]
     
+    # Ottieni i bridge disponibili sulla destinazione per il warning
+    dest_bridges = await proxmox_service.get_node_bridges(
+        hostname=dest_node.hostname,
+        port=dest_node.ssh_port,
+        username=dest_node.ssh_user,
+        key_path=dest_node.ssh_key_path
+    )
+    
     # Registra la VM sulla destinazione con ID diverso se specificato
     # Passa source_storage e dest_storage per la sostituzione automatica
-    success, msg = await proxmox_service.register_vm(
+    force_cpu = getattr(job, 'force_cpu_host', True)  # Default True per compatibilità
+    success, msg, warnings = await proxmox_service.register_vm(
         hostname=dest_node.hostname,
         vmid=target_vmid,
         vm_type=vm_type,
@@ -1185,6 +1333,8 @@ async def register_vm_manually(
         dest_storage=job.dest_storage,
         dest_zfs_pool=dest_zfs_pool,
         vm_name_suffix=job.dest_vm_name_suffix,
+        force_cpu_host=force_cpu,
+        dest_node_bridges=dest_bridges,
         port=dest_node.ssh_port,
         username=dest_node.ssh_user,
         key_path=dest_node.ssh_key_path
@@ -1197,13 +1347,21 @@ async def register_vm_manually(
             details=f"VM {target_vmid} registrata su {dest_node.name}" + (f" (da VM {job.vm_id})" if target_vmid != job.vm_id else ""),
             ip_address=request.client.host if request.client else None
         )
-        return {
+        
+        response = {
             "success": True,
             "message": f"VM {target_vmid} ({vm_type}) registrata su {dest_node.name}" + (f" (copiata da VM {job.vm_id})" if target_vmid != job.vm_id else ""),
             "config_path": config_path,
             "source_vmid": job.vm_id,
             "dest_vmid": target_vmid
         }
+        
+        # Aggiungi warnings se presenti
+        if warnings:
+            response["warnings"] = warnings
+            response["message"] += f"\n⚠️ {len(warnings)} avvisi: " + "; ".join(w for w in warnings)
+        
+        return response
     else:
         raise HTTPException(status_code=500, detail=f"Registrazione fallita: {msg}")
 
