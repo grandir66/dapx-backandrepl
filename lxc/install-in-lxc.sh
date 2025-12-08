@@ -68,6 +68,7 @@ apt-get install -y \
     ca-certificates \
     curl \
     wget \
+    rsync \
     build-essential \
     libssl-dev \
     libffi-dev \
