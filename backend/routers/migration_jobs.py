@@ -1,0 +1,488 @@
+"""
+Router per gestione Migration Jobs (migrazione/copia VM tra nodi Proxmox)
+Usa funzionalità native di Proxmox (qm copy / pct copy)
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
+from sqlalchemy.orm import Session
+from typing import List, Optional
+from datetime import datetime
+from pydantic import BaseModel, Field, field_validator
+import asyncio
+import logging
+import json
+
+from database import (
+    get_db, Node, MigrationJob, JobLog, User, 
+    NodeType
+)
+from services.migration_service import migration_service
+from services.proxmox_service import proxmox_service
+from services.notification_service import notification_service
+from routers.auth import get_current_user, require_operator, require_admin, log_audit
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+# ============== Schemas ==============
+
+class MigrationJobCreate(BaseModel):
+    name: str
+    source_node_id: int
+    vm_id: int
+    vm_type: str = "qemu"  # qemu, lxc
+    dest_node_id: int
+    dest_vm_id: Optional[int] = None
+    dest_vm_name_suffix: Optional[str] = None
+    
+    migration_type: str = "copy"  # copy, move
+    create_snapshot: bool = True
+    keep_snapshots: int = 1
+    start_after_migration: bool = False
+    
+    # Riconfigurazione hardware (JSON)
+    hw_config: Optional[dict] = None  # {"memory": 4096, "cores": 2, "network": {...}, "storage": {...}}
+    
+    schedule: Optional[str] = None  # Cron format
+    notify_mode: str = "daily"
+    notify_subject: Optional[str] = None
+
+
+class MigrationJobUpdate(BaseModel):
+    name: Optional[str] = None
+    source_node_id: Optional[int] = None
+    vm_id: Optional[int] = None
+    vm_type: Optional[str] = None
+    dest_node_id: Optional[int] = None
+    dest_vm_id: Optional[int] = None
+    dest_vm_name_suffix: Optional[str] = None
+    
+    migration_type: Optional[str] = None
+    create_snapshot: Optional[bool] = None
+    keep_snapshots: Optional[int] = None
+    start_after_migration: Optional[bool] = None
+    
+    hw_config: Optional[dict] = None
+    
+    schedule: Optional[str] = None
+    is_active: Optional[bool] = None
+    notify_mode: Optional[str] = None
+    notify_subject: Optional[str] = None
+
+
+class MigrationJobResponse(BaseModel):
+    id: int
+    name: str
+    source_node_id: int
+    vm_id: int
+    vm_type: str
+    vm_name: Optional[str]
+    dest_node_id: int
+    dest_vm_id: Optional[int]
+    dest_vm_name_suffix: Optional[str]
+    
+    migration_type: str
+    create_snapshot: bool
+    keep_snapshots: int
+    start_after_migration: bool
+    
+    hw_config: Optional[dict]
+    
+    schedule: Optional[str]
+    is_active: bool
+    notify_mode: str
+    notify_subject: Optional[str]
+    
+    last_run: Optional[datetime]
+    last_status: Optional[str]
+    last_duration: Optional[int]
+    last_transferred: Optional[str]
+    last_error: Optional[str]
+    run_count: int
+    error_count: int
+    consecutive_failures: int
+    
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class MigrationJobResponseWithNodes(MigrationJobResponse):
+    source_node_name: Optional[str] = None
+    dest_node_name: Optional[str] = None
+
+
+# ============== Helper Functions ==============
+
+def check_job_access(user: User, job: MigrationJob, db: Session) -> bool:
+    """Verifica se l'utente ha accesso al job"""
+    if user.role == "admin":
+        return True
+    
+    if user.allowed_nodes is None:
+        return True
+    
+    return (job.source_node_id in user.allowed_nodes and 
+            job.dest_node_id in user.allowed_nodes)
+
+
+# ============== Background Task ==============
+
+async def execute_migration_job_task(job_id: int, triggered_by: Optional[int] = None):
+    """Esegue un job di migrazione in background"""
+    from database import SessionLocal
+    
+    db = SessionLocal()
+    try:
+        job = db.query(MigrationJob).filter(MigrationJob.id == job_id).first()
+        if not job:
+            logger.error(f"Migration job {job_id} non trovato")
+            return
+        
+        source_node = db.query(Node).filter(Node.id == job.source_node_id).first()
+        dest_node = db.query(Node).filter(Node.id == job.dest_node_id).first()
+        
+        if not source_node or not dest_node:
+            logger.error(f"Nodi non trovati per job {job_id}")
+            return
+        
+        # Crea log entry
+        log_entry = JobLog(
+            job_type="migration",
+            job_id=job_id,
+            node_name=f"{source_node.name} → {dest_node.name}",
+            status="started",
+            message=f"Migrazione VM {job.vm_id} da {source_node.name} a {dest_node.name}",
+            started_at=datetime.utcnow(),
+            triggered_by=triggered_by
+        )
+        db.add(log_entry)
+        db.commit()
+        
+        start_time = datetime.utcnow()
+        
+        try:
+            # Esegui migrazione
+            result = await migration_service.migrate_vm(
+                source_hostname=source_node.hostname,
+                dest_hostname=dest_node.hostname,
+                vm_id=job.vm_id,
+                vm_type=job.vm_type,
+                dest_vm_id=job.dest_vm_id,
+                dest_vm_name_suffix=job.dest_vm_name_suffix,
+                migration_type=job.migration_type,
+                create_snapshot=job.create_snapshot,
+                keep_snapshots=job.keep_snapshots,
+                start_after=job.start_after_migration,
+                hw_config=job.hw_config,
+                source_port=source_node.ssh_port,
+                source_user=source_node.ssh_user,
+                source_key=source_node.ssh_key_path,
+                dest_port=dest_node.ssh_port,
+                dest_user=dest_node.ssh_user,
+                dest_key=dest_node.ssh_key_path
+            )
+            
+            duration = int((datetime.utcnow() - start_time).total_seconds())
+            
+            if result["success"]:
+                job.last_status = "success"
+                job.last_duration = duration
+                job.last_transferred = result.get("transferred", "0B")
+                job.last_run = datetime.utcnow()
+                job.run_count += 1
+                job.consecutive_failures = 0
+                job.last_error = None
+                
+                log_entry.status = "success"
+                log_entry.message = result["message"]
+                log_entry.duration = duration
+                log_entry.transferred = result.get("transferred", "0B")
+                log_entry.completed_at = datetime.utcnow()
+                
+                # Notifica
+                await notification_service.send_job_notification(
+                    job_name=job.name,
+                    status="success",
+                    source=f"{source_node.name}:vm/{job.vm_id}",
+                    destination=f"{dest_node.name}:vm/{result.get('vm_id', job.dest_vm_id or job.vm_id)}",
+                    duration=duration,
+                    transferred=result.get("transferred", "0B"),
+                    details=f"Migrazione completata: {result['message']}",
+                    job_id=job_id,
+                    notify_mode=job.notify_mode,
+                    is_scheduled=bool(job.schedule)
+                )
+            else:
+                job.last_status = "failed"
+                job.last_duration = duration
+                job.last_error = result.get("error", result.get("message", "Errore sconosciuto"))[:1000]
+                job.last_run = datetime.utcnow()
+                job.run_count += 1
+                job.error_count += 1
+                job.consecutive_failures += 1
+                
+                log_entry.status = "failed"
+                log_entry.message = result.get("message", "Errore durante migrazione")
+                log_entry.error = result.get("error", "")[:2000]
+                log_entry.duration = duration
+                log_entry.completed_at = datetime.utcnow()
+                
+                # Notifica errore
+                await notification_service.send_job_notification(
+                    job_name=job.name,
+                    status="failed",
+                    source=f"{source_node.name}:vm/{job.vm_id}",
+                    destination=f"{dest_node.name}",
+                    duration=duration,
+                    error=result.get("error", result.get("message", "Errore sconosciuto")),
+                    details="Migrazione fallita",
+                    job_id=job_id,
+                    notify_mode=job.notify_mode,
+                    is_scheduled=bool(job.schedule)
+                )
+            
+            db.commit()
+            
+        except Exception as e:
+            logger.error(f"Errore esecuzione migration job {job_id}: {e}", exc_info=True)
+            job.last_status = "failed"
+            job.last_error = str(e)[:1000]
+            job.error_count += 1
+            job.consecutive_failures += 1
+            
+            log_entry.status = "failed"
+            log_entry.error = str(e)[:2000]
+            log_entry.completed_at = datetime.utcnow()
+            
+            db.commit()
+            
+    finally:
+        db.close()
+
+
+# ============== Endpoints ==============
+
+@router.get("/", response_model=List[MigrationJobResponseWithNodes])
+async def list_migration_jobs(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Lista tutti i job di migrazione"""
+    jobs = db.query(MigrationJob).all()
+    
+    result = []
+    for job in jobs:
+        if not check_job_access(user, job, db):
+            continue
+        
+        job_dict = MigrationJobResponse.model_validate(job).model_dump()
+        
+        source_node = db.query(Node).filter(Node.id == job.source_node_id).first()
+        dest_node = db.query(Node).filter(Node.id == job.dest_node_id).first()
+        
+        job_dict["source_node_name"] = source_node.name if source_node else None
+        job_dict["dest_node_name"] = dest_node.name if dest_node else None
+        
+        result.append(MigrationJobResponseWithNodes(**job_dict))
+    
+    return result
+
+
+@router.post("/", response_model=MigrationJobResponse)
+async def create_migration_job(
+    job: MigrationJobCreate,
+    request: Request,
+    user: User = Depends(require_operator),
+    db: Session = Depends(get_db)
+):
+    """Crea un nuovo job di migrazione"""
+    
+    source_node = db.query(Node).filter(Node.id == job.source_node_id).first()
+    dest_node = db.query(Node).filter(Node.id == job.dest_node_id).first()
+    
+    if not source_node or not dest_node:
+        raise HTTPException(status_code=400, detail="Nodi non trovati")
+    
+    # Verifica accesso
+    if user.allowed_nodes is not None:
+        if job.source_node_id not in user.allowed_nodes:
+            raise HTTPException(status_code=403, detail="Accesso negato al nodo sorgente")
+        if job.dest_node_id not in user.allowed_nodes:
+            raise HTTPException(status_code=403, detail="Accesso negato al nodo destinazione")
+    
+    # Ottieni nome VM
+    vm_name = None
+    try:
+        guests = await proxmox_service.get_all_guests(
+            hostname=source_node.hostname,
+            port=source_node.ssh_port,
+            username=source_node.ssh_user,
+            key_path=source_node.ssh_key_path
+        )
+        for vm in guests:
+            if vm.get("vmid") == job.vm_id:
+                vm_name = vm.get("name")
+                break
+    except:
+        pass
+    
+    # Crea job
+    db_job = MigrationJob(
+        name=job.name,
+        source_node_id=job.source_node_id,
+        vm_id=job.vm_id,
+        vm_type=job.vm_type,
+        vm_name=vm_name,
+        dest_node_id=job.dest_node_id,
+        dest_vm_id=job.dest_vm_id,
+        dest_vm_name_suffix=job.dest_vm_name_suffix,
+        migration_type=job.migration_type,
+        create_snapshot=job.create_snapshot,
+        keep_snapshots=job.keep_snapshots,
+        start_after_migration=job.start_after_migration,
+        hw_config=job.hw_config,
+        schedule=job.schedule,
+        notify_mode=job.notify_mode,
+        notify_subject=job.notify_subject,
+        created_by=user.id
+    )
+    
+    db.add(db_job)
+    
+    log_audit(
+        db, user.id, "migration_job_created", "migration_job",
+        resource_id=db_job.id,
+        details=f"Created migration job: {job.name}",
+        ip_address=request.client.host if request.client else None
+    )
+    
+    db.commit()
+    db.refresh(db_job)
+    
+    return db_job
+
+
+@router.put("/{job_id}", response_model=MigrationJobResponse)
+async def update_migration_job(
+    job_id: int,
+    update: MigrationJobUpdate,
+    request: Request,
+    user: User = Depends(require_operator),
+    db: Session = Depends(get_db)
+):
+    """Aggiorna un job di migrazione"""
+    
+    job = db.query(MigrationJob).filter(MigrationJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job non trovato")
+    
+    if not check_job_access(user, job, db):
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    
+    for key, value in update.model_dump(exclude_unset=True).items():
+        setattr(job, key, value)
+    
+    job.updated_at = datetime.utcnow()
+    
+    log_audit(
+        db, user.id, "migration_job_updated", "migration_job",
+        resource_id=job_id,
+        details=f"Updated migration job: {job.name}",
+        ip_address=request.client.host if request.client else None
+    )
+    
+    db.commit()
+    db.refresh(job)
+    
+    return job
+
+
+@router.delete("/{job_id}")
+async def delete_migration_job(
+    job_id: int,
+    request: Request,
+    user: User = Depends(require_operator),
+    db: Session = Depends(get_db)
+):
+    """Elimina un job di migrazione"""
+    
+    job = db.query(MigrationJob).filter(MigrationJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job non trovato")
+    
+    if not check_job_access(user, job, db):
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    
+    log_audit(
+        db, user.id, "migration_job_deleted", "migration_job",
+        resource_id=job_id,
+        details=f"Deleted migration job: {job.name}",
+        ip_address=request.client.host if request.client else None
+    )
+    
+    db.delete(job)
+    db.commit()
+    
+    return {"success": True, "message": "Job eliminato"}
+
+
+@router.post("/{job_id}/run")
+async def run_migration_job(
+    job_id: int,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    user: User = Depends(require_operator),
+    db: Session = Depends(get_db)
+):
+    """Esegue manualmente un job di migrazione"""
+    
+    job = db.query(MigrationJob).filter(MigrationJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job non trovato")
+    
+    if not check_job_access(user, job, db):
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    
+    if job.last_status == "running":
+        raise HTTPException(status_code=400, detail="Job già in esecuzione")
+    
+    job.last_status = "running"
+    db.commit()
+    
+    background_tasks.add_task(execute_migration_job_task, job_id, user.id)
+    
+    log_audit(
+        db, user.id, "migration_job_run", "migration_job",
+        resource_id=job_id,
+        details=f"Manually triggered migration job: {job.name}",
+        ip_address=request.client.host if request.client else None
+    )
+    
+    return {"success": True, "message": "Migrazione avviata"}
+
+
+@router.post("/{job_id}/toggle")
+async def toggle_migration_job(
+    job_id: int,
+    request: Request,
+    user: User = Depends(require_operator),
+    db: Session = Depends(get_db)
+):
+    """Attiva/disattiva un job di migrazione"""
+    
+    job = db.query(MigrationJob).filter(MigrationJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job non trovato")
+    
+    if not check_job_access(user, job, db):
+        raise HTTPException(status_code=403, detail="Accesso negato")
+    
+    job.is_active = not job.is_active
+    db.commit()
+    
+    return {"success": True, "is_active": job.is_active}
+

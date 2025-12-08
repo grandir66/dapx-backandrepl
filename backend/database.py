@@ -294,6 +294,8 @@ class Node(Base):
     recovery_jobs_dest = relationship("RecoveryJob", foreign_keys="RecoveryJob.dest_node_id", back_populates="dest_node")
     backup_jobs_source = relationship("BackupJob", foreign_keys="BackupJob.source_node_id", back_populates="source_node")
     backup_jobs_pbs = relationship("BackupJob", foreign_keys="BackupJob.pbs_node_id", back_populates="pbs_node")
+    migration_jobs_source = relationship("MigrationJob", foreign_keys="MigrationJob.source_node_id", back_populates="source_node")
+    migration_jobs_dest = relationship("MigrationJob", foreign_keys="MigrationJob.dest_node_id", back_populates="dest_node")
 
 
 class Dataset(Base):
@@ -608,6 +610,64 @@ class HostBackupJob(Base):
     
     # Relationships
     node = relationship("Node", foreign_keys=[node_id])
+
+
+class MigrationJob(Base):
+    """
+    Job di migrazione/copia VM tra nodi Proxmox usando funzionalità native.
+    Supporta riconfigurazione hardware (network, storage, RAM, CPU) durante la migrazione.
+    """
+    __tablename__ = "migration_jobs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    
+    # VM sorgente
+    source_node_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)
+    vm_id = Column(Integer, nullable=False)  # VMID sorgente
+    vm_type = Column(String(10), default="qemu")  # qemu, lxc
+    vm_name = Column(String(100), nullable=True)
+    
+    # Nodo destinazione
+    dest_node_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)
+    dest_vm_id = Column(Integer, nullable=True)  # VMID destinazione (null = stesso del sorgente)
+    dest_vm_name_suffix = Column(String(50), nullable=True)  # Suffisso nome VM (es: "-migrated", "-replica")
+    
+    # Opzioni migrazione
+    migration_type = Column(String(20), default="copy")  # copy, move
+    create_snapshot = Column(Boolean, default=True)  # Crea snapshot prima della migrazione
+    keep_snapshots = Column(Integer, default=1)  # Numero snapshot da mantenere (1 per migrazione, più per replica)
+    start_after_migration = Column(Boolean, default=False)  # Avvia VM dopo migrazione
+    
+    # Riconfigurazione Hardware (JSON per flessibilità)
+    # Esempio: {"memory": 4096, "cores": 2, "network": {"net0": "bridge=vmbr1"}, "storage": {"scsi0": "local-lvm:vm-100-disk-0"}}
+    hw_config = Column(JSON, nullable=True)  # Configurazione hardware personalizzata
+    
+    # Scheduling
+    schedule = Column(String(100), nullable=True)  # Cron format (null = manuale)
+    is_active = Column(Boolean, default=True)
+    
+    # Notifiche
+    notify_mode = Column(String(20), default="daily")  # daily, always, failure, never
+    notify_subject = Column(String(200), nullable=True)
+    
+    # Stats
+    last_run = Column(DateTime, nullable=True)
+    last_status = Column(String(50), nullable=True)  # success, failed, running
+    last_duration = Column(Integer, nullable=True)  # secondi
+    last_transferred = Column(String(50), nullable=True)  # es: "10.5G"
+    last_error = Column(Text, nullable=True)
+    run_count = Column(Integer, default=0)
+    error_count = Column(Integer, default=0)
+    consecutive_failures = Column(Integer, default=0)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
+    # Relationships
+    source_node = relationship("Node", foreign_keys=[source_node_id], back_populates="migration_jobs_source")
+    dest_node = relationship("Node", foreign_keys=[dest_node_id], back_populates="migration_jobs_dest")
 
 
 class JobLog(Base):

@@ -10,7 +10,7 @@ import logging
 from croniter import croniter
 from sqlalchemy.orm import Session
 
-from database import SessionLocal, SyncJob, JobLog, Node, NotificationConfig, SystemConfig, HostBackupJob
+from database import SessionLocal, SyncJob, JobLog, Node, NotificationConfig, SystemConfig, HostBackupJob, MigrationJob
 from services.syncoid_service import syncoid_service
 from services.proxmox_service import proxmox_service
 from services.notification_service import notification_service
@@ -181,6 +181,31 @@ class SchedulerService:
                         
                 except Exception as e:
                     logger.error(f"Errore scheduling HostBackupJob {job.id}: {e}")
+            
+            # === MIGRATION JOBS ===
+            migration_jobs = db.query(MigrationJob).filter(
+                MigrationJob.is_active == True,
+                MigrationJob.schedule.isnot(None),
+                MigrationJob.schedule != ""
+            ).all()
+            
+            for job in migration_jobs:
+                try:
+                    job_key = f"migration_{job.id}"
+                    if job_key not in self._jobs:
+                        cron = croniter(job.schedule, job.last_run or now)
+                        self._jobs[job_key] = cron.get_next(datetime)
+                    
+                    next_run = self._jobs[job_key]
+                    
+                    if now >= next_run:
+                        logger.info(f"Esecuzione MigrationJob schedulato: {job.name} (ID: {job.id})")
+                        asyncio.create_task(self._execute_migration_job(job.id))
+                        cron = croniter(job.schedule, now)
+                        self._jobs[job_key] = cron.get_next(datetime)
+                        
+                except Exception as e:
+                    logger.error(f"Errore scheduling MigrationJob {job.id}: {e}")
                     
         finally:
             db.close()
@@ -426,6 +451,13 @@ class SchedulerService:
                 db.commit()
         finally:
             db.close()
+    
+    async def _execute_migration_job(self, job_id: int):
+        """Esegue un job di migrazione"""
+        from routers.migration_jobs import execute_migration_job_task
+        
+        # Usa la funzione già definita nel router
+        await execute_migration_job_task(job_id, triggered_by=None)
     
     async def _register_vm_after_sync(
         self,
