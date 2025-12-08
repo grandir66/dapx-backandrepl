@@ -8,13 +8,15 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel
+import logging
 
-from database import get_db, Node, Dataset, User, JobLog
+from database import get_db, Node, Dataset, User, JobLog, VMSnapshotConfig
 from services.ssh_service import ssh_service
 from services.sanoid_service import sanoid_service, DEFAULT_TEMPLATES
 from routers.auth import get_current_user, require_operator, log_audit
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ============== Schemas ==============
@@ -542,4 +544,194 @@ async def get_node_snapshot_stats(
         "total_snapshots": len(snapshots),
         "by_type": type_counts,
         "top_datasets": [{"dataset": d, "count": c} for d, c in top_datasets]
+    }
+
+
+# ============== VM Snapshot Config ==============
+
+class VMSnapshotConfigCreate(BaseModel):
+    enabled: bool = False
+    schedule: Optional[str] = None
+    hourly: int = 0
+    daily: int = 7
+    weekly: int = 4
+    monthly: int = 3
+    yearly: int = 0
+    template: str = "production"
+
+
+class VMSnapshotConfigResponse(BaseModel):
+    id: int
+    node_id: int
+    vm_id: int
+    vm_type: str
+    enabled: bool
+    schedule: Optional[str]
+    hourly: int
+    daily: int
+    weekly: int
+    monthly: int
+    yearly: int
+    template: str
+    
+    class Config:
+        from_attributes = True
+
+
+@router.get("/vm/{node_id}/{vm_id}/config", response_model=VMSnapshotConfigResponse)
+async def get_vm_snapshot_config(
+    node_id: int,
+    vm_id: int,
+    vm_type: str = "qemu",
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Ottiene la configurazione snapshot sanoid per una VM"""
+    node = db.query(Node).filter(Node.id == node_id).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Nodo non trovato")
+    
+    config = db.query(VMSnapshotConfig).filter(
+        VMSnapshotConfig.node_id == node_id,
+        VMSnapshotConfig.vm_id == vm_id,
+        VMSnapshotConfig.vm_type == vm_type
+    ).first()
+    
+    if not config:
+        # Crea config di default
+        config = VMSnapshotConfig(
+            node_id=node_id,
+            vm_id=vm_id,
+            vm_type=vm_type,
+            enabled=False
+        )
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+    
+    return config
+
+
+@router.put("/vm/{node_id}/{vm_id}/config", response_model=VMSnapshotConfigResponse)
+async def update_vm_snapshot_config(
+    node_id: int,
+    vm_id: int,
+    vm_type: str = "qemu",
+    config_data: VMSnapshotConfigCreate = None,
+    request: Request = None,
+    user: User = Depends(require_operator),
+    db: Session = Depends(get_db)
+):
+    """Aggiorna la configurazione snapshot sanoid per una VM"""
+    node = db.query(Node).filter(Node.id == node_id).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Nodo non trovato")
+    
+    config = db.query(VMSnapshotConfig).filter(
+        VMSnapshotConfig.node_id == node_id,
+        VMSnapshotConfig.vm_id == vm_id,
+        VMSnapshotConfig.vm_type == vm_type
+    ).first()
+    
+    if not config:
+        config = VMSnapshotConfig(
+            node_id=node_id,
+            vm_id=vm_id,
+            vm_type=vm_type
+        )
+        db.add(config)
+    
+    # Aggiorna valori
+    if config_data:
+        config.enabled = config_data.enabled
+        config.schedule = config_data.schedule
+        config.hourly = config_data.hourly
+        config.daily = config_data.daily
+        config.weekly = config_data.weekly
+        config.monthly = config_data.monthly
+        config.yearly = config_data.yearly
+        config.template = config_data.template
+    
+    config.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(config)
+    
+        # Se abilitato, applica configurazione sanoid ai dataset della VM
+        if config.enabled:
+            from routers.vms import get_vm_datasets
+            from services.sanoid_config_service import sanoid_config_service
+            
+            try:
+                datasets_resp = await get_vm_datasets(node_id, vm_id, vm_type, user, db)
+                if datasets_resp and datasets_resp.datasets:
+                    for dataset in datasets_resp.datasets:
+                        await sanoid_config_service.add_dataset_config(
+                            hostname=node.hostname,
+                            dataset=dataset,
+                            autosnap=True,
+                            autoprune=True,
+                            hourly=config.hourly,
+                            daily=config.daily,
+                            weekly=config.weekly,
+                            monthly=config.monthly,
+                            yearly=config.yearly,
+                            port=node.ssh_port,
+                            username=node.ssh_user,
+                            key_path=node.ssh_key_path
+                        )
+            except Exception as e:
+                logger.warning(f"Errore applicazione config sanoid: {e}")
+    
+    log_audit(
+        db, user.id, "vm_snapshot_config_updated", "vm_snapshot_config",
+        details=f"Updated snapshot config for VM {vm_id} on {node.name}",
+        ip_address=request.client.host if request.client else None
+    )
+    
+    return config
+
+
+@router.get("/vm/{node_id}/{vm_id}/all")
+async def get_vm_all_snapshots(
+    node_id: int,
+    vm_id: int,
+    vm_type: str = "qemu",
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Ottiene tutti gli snapshot di una VM: Proxmox + Sanoid"""
+    # Snapshot Proxmox (usa la funzione esistente)
+    proxmox_snaps = await get_vm_snapshots(node_id, vm_id, user, db)
+    
+    # Snapshot Sanoid (ZFS)
+    node = db.query(Node).filter(Node.id == node_id).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Nodo non trovato")
+    
+    # Ottieni dataset della VM
+    from routers.vms import get_vm_datasets
+    datasets_resp = await get_vm_datasets(node_id, vm_id, vm_type, user, db)
+    
+    sanoid_snapshots = []
+    if datasets_resp and datasets_resp.datasets:
+        for dataset in datasets_resp.datasets:
+            snaps = await ssh_service.get_snapshots(
+                hostname=node.hostname,
+                dataset=dataset,
+                port=node.ssh_port,
+                username=node.ssh_user,
+                key_path=node.ssh_key_path
+            )
+            # Filtra solo snapshot sanoid (autosnap_*)
+            for snap in snaps:
+                if 'autosnap_' in snap.get('snapshot', ''):
+                    snap['source'] = 'sanoid'
+                    sanoid_snapshots.append(snap)
+    
+    return {
+        "vm_id": vm_id,
+        "node_name": node.name,
+        "proxmox_snapshots": proxmox_snaps,
+        "sanoid_snapshots": sanoid_snapshots,
+        "total": proxmox_snaps.get("total_snapshots", 0) + len(sanoid_snapshots)
     }

@@ -4436,67 +4436,196 @@
         
         <!-- Modal Snapshot VM -->
         <div class="modal-overlay" v-if="showVmSnapshotModal" @click.self="showVmSnapshotModal = false">
-            <div class="modal" style="max-width: 900px;">
+            <div class="modal" style="max-width: 1000px;">
                 <div class="modal-header">
                     <h3 class="modal-title">📷 Snapshot VM {{ vmSnapshotData.vmId }} - {{ vmSnapshotData.vmName }}</h3>
                     <button class="btn btn-icon" @click="showVmSnapshotModal = false">✕</button>
                 </div>
                 
                 <div class="modal-body">
-                    <div v-if="vmSnapshotData.loading" style="text-align: center; padding: 40px;">
-                        <p>Caricamento snapshot...</p>
+                    <!-- Tab Navigation -->
+                    <div style="display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 2px solid var(--border-color);">
+                        <button class="btn" :class="vmSnapshotTab === 'snapshots' ? 'btn-primary' : 'btn-secondary'" 
+                                @click="vmSnapshotTab = 'snapshots'" style="border-radius: 8px 8px 0 0;">
+                            📸 Snapshot ({{ (vmSnapshotData.proxmoxTotal || 0) + (vmSnapshotData.sanoidTotal || 0) }})
+                        </button>
+                        <button class="btn" :class="vmSnapshotTab === 'config' ? 'btn-primary' : 'btn-secondary'" 
+                                @click="vmSnapshotTab = 'config'" style="border-radius: 8px 8px 0 0;">
+                            ⚙️ Configurazione Sanoid
+                        </button>
                     </div>
                     
-                    <div v-else-if="vmSnapshotData.total === 0" style="text-align: center; padding: 40px; color: var(--text-secondary);">
-                        <p>Nessuno snapshot trovato per questa VM</p>
-                    </div>
-                    
-                    <div v-else>
-                        <p style="margin-bottom: 16px; color: var(--accent-primary);">
-                            <strong>{{ vmSnapshotData.total }}</strong> snapshot trovati su <strong>{{ vmSnapshotData.nodeName }}</strong>
-                        </p>
-                        
-                        <div v-for="(snaps, dataset) in vmSnapshotData.datasets" :key="dataset" style="margin-bottom: 20px;">
-                            <h4 style="color: var(--accent-secondary); margin-bottom: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.9rem;">
-                                📁 {{ dataset }}
-                            </h4>
-                            <div class="table-container" style="max-height: 250px; overflow-y: auto;">
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Snapshot</th>
-                                            <th>Dimensione</th>
-                                            <th>Data Creazione</th>
-                                            <th>Azioni</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr v-for="snap in snaps" :key="snap.full_name">
-                                            <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--accent-primary);">
-                                                {{ snap.snapshot }}
-                                            </td>
-                                            <td>{{ snap.used }}</td>
-                                            <td>{{ snap.creation }}</td>
-                                            <td>
-                                                <button class="btn btn-danger btn-sm" @click="rollbackToSnapshot(snap)" :disabled="loading" title="Rollback (distruttivo!)">
-                                                    🔄 Rollback
-                                                </button>
-                                                <button class="btn btn-secondary btn-sm" @click="cloneSnapshot(snap)" :disabled="loading" title="Crea clone" style="margin-left: 4px;">
-                                                    📋 Clone
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
+                    <!-- Tab: Snapshot -->
+                    <div v-if="vmSnapshotTab === 'snapshots'">
+                        <div v-if="vmSnapshotData.loading" style="text-align: center; padding: 40px;">
+                            <div class="spinner"></div>
+                            <p style="margin-top: 16px;">Caricamento snapshot...</p>
                         </div>
                         
-                        <div style="margin-top: 20px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px; font-size: 13px;">
-                            <strong style="color: var(--accent-warning);">⚠️ Attenzione:</strong>
-                            <ul style="margin: 8px 0 0 20px; color: var(--text-secondary);">
-                                <li><strong>Rollback</strong>: Ripristina il dataset allo stato dello snapshot. <span style="color: var(--accent-danger);">DISTRUTTIVO - i dati successivi verranno persi!</span></li>
-                                <li><strong>Clone</strong>: Crea una copia scrivibile del dataset. Non distruttivo.</li>
-                            </ul>
+                        <div v-else-if="(vmSnapshotData.proxmoxTotal || 0) === 0 && (vmSnapshotData.sanoidTotal || 0) === 0" 
+                             style="text-align: center; padding: 40px; color: var(--text-secondary);">
+                            <p>Nessuno snapshot trovato per questa VM</p>
+                        </div>
+                        
+                        <div v-else>
+                            <!-- Snapshot Proxmox -->
+                            <div v-if="vmSnapshotData.proxmoxDatasets && Object.keys(vmSnapshotData.proxmoxDatasets).length > 0" style="margin-bottom: 30px;">
+                                <h4 style="color: var(--accent-primary); margin-bottom: 12px;">
+                                    🖥️ Snapshot Proxmox ({{ vmSnapshotData.proxmoxTotal || 0 }})
+                                </h4>
+                                <div v-for="(snaps, dataset) in vmSnapshotData.proxmoxDatasets" :key="'proxmox-' + dataset" style="margin-bottom: 20px;">
+                                    <h5 style="color: var(--accent-secondary); margin-bottom: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.9rem;">
+                                        📁 {{ dataset }}
+                                    </h5>
+                                    <div class="table-container" style="max-height: 250px; overflow-y: auto;">
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>Snapshot</th>
+                                                    <th>Dimensione</th>
+                                                    <th>Data Creazione</th>
+                                                    <th>Azioni</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr v-for="snap in snaps" :key="snap.full_name">
+                                                    <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--accent-primary);">
+                                                        {{ snap.snapshot }}
+                                                    </td>
+                                                    <td>{{ snap.used }}</td>
+                                                    <td>{{ snap.creation }}</td>
+                                                    <td>
+                                                        <button class="btn btn-danger btn-sm" @click="rollbackToSnapshot(snap)" :disabled="loading" title="Rollback (distruttivo!)">
+                                                            🔄 Rollback
+                                                        </button>
+                                                        <button class="btn btn-secondary btn-sm" @click="cloneSnapshot(snap)" :disabled="loading" title="Crea clone" style="margin-left: 4px;">
+                                                            📋 Clone
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Snapshot Sanoid -->
+                            <div v-if="vmSnapshotData.sanoidSnapshots && vmSnapshotData.sanoidSnapshots.length > 0" style="margin-bottom: 30px;">
+                                <h4 style="color: var(--accent-secondary); margin-bottom: 12px;">
+                                    ⚡ Snapshot Sanoid ({{ vmSnapshotData.sanoidTotal || 0 }})
+                                </h4>
+                                <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Dataset</th>
+                                                <th>Snapshot</th>
+                                                <th>Dimensione</th>
+                                                <th>Data Creazione</th>
+                                                <th>Azioni</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="snap in vmSnapshotData.sanoidSnapshots" :key="snap.full_name">
+                                                <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">{{ snap.dataset.split('/').pop() }}</td>
+                                                <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--accent-secondary);">
+                                                    {{ snap.snapshot }}
+                                                </td>
+                                                <td>{{ snap.used }}</td>
+                                                <td>{{ snap.creation }}</td>
+                                                <td>
+                                                    <button class="btn btn-danger btn-sm" @click="rollbackToSnapshot(snap)" :disabled="loading" title="Rollback (distruttivo!)">
+                                                        🔄 Rollback
+                                                    </button>
+                                                    <button class="btn btn-secondary btn-sm" @click="cloneSnapshot(snap)" :disabled="loading" title="Crea clone" style="margin-left: 4px;">
+                                                        📋 Clone
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <div style="margin-top: 20px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px; font-size: 13px;">
+                                <strong style="color: var(--accent-warning);">⚠️ Attenzione:</strong>
+                                <ul style="margin: 8px 0 0 20px; color: var(--text-secondary);">
+                                    <li><strong>Rollback</strong>: Ripristina il dataset allo stato dello snapshot. <span style="color: var(--accent-danger);">DISTRUTTIVO - i dati successivi verranno persi!</span></li>
+                                    <li><strong>Clone</strong>: Crea una copia scrivibile del dataset. Non distruttivo.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Tab: Configurazione Sanoid -->
+                    <div v-if="vmSnapshotTab === 'config'">
+                        <div v-if="vmSnapshotConfigLoading" style="text-align: center; padding: 40px;">
+                            <div class="spinner"></div>
+                            <p style="margin-top: 16px;">Caricamento configurazione...</p>
+                        </div>
+                        
+                        <div v-else>
+                            <div class="form-group">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" v-model="vmSnapshotConfig.enabled" @change="saveVmSnapshotConfig()" style="width: 18px; height: 18px;">
+                                    <span><strong>Abilita snapshot automatici Sanoid per questa VM</strong></span>
+                                </label>
+                                <small style="color: var(--text-secondary); display: block; margin-top: 4px;">
+                                    Sanoid creerà snapshot automatici sui dataset ZFS della VM secondo la schedulazione configurata
+                                </small>
+                            </div>
+                            
+                            <div v-if="vmSnapshotConfig.enabled" style="margin-top: 20px; padding: 20px; background: var(--bg-tertiary); border-radius: 8px;">
+                                <h4 style="margin-bottom: 16px; color: var(--accent-primary);">⏰ Schedulazione</h4>
+                                
+                                <div class="form-group">
+                                    <label class="form-label">Preset Schedulazione</label>
+                                    <select class="form-input" v-model="vmSnapshotConfigSchedulePreset" @change="onSchedulePresetChange(vmSnapshotConfig)">
+                                        <option v-for="preset in schedulePresets" :key="preset.value" :value="preset.value">
+                                            {{ preset.label }}
+                                        </option>
+                                    </select>
+                                    <input v-if="vmSnapshotConfigSchedulePreset === 'custom'" type="text" class="form-input" 
+                                           v-model="vmSnapshotConfig.schedule" @change="saveVmSnapshotConfig()" 
+                                           placeholder="es: 0 */6 * * *" style="margin-top: 8px;">
+                                </div>
+                                
+                                <h4 style="margin-top: 24px; margin-bottom: 16px; color: var(--accent-primary);">📊 Retention</h4>
+                                
+                                <div class="grid-2">
+                                    <div class="form-group">
+                                        <label class="form-label">Hourly</label>
+                                        <input type="number" class="form-input" v-model.number="vmSnapshotConfig.hourly" 
+                                               @change="saveVmSnapshotConfig()" min="0" max="24">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Daily</label>
+                                        <input type="number" class="form-input" v-model.number="vmSnapshotConfig.daily" 
+                                               @change="saveVmSnapshotConfig()" min="0" max="365">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Weekly</label>
+                                        <input type="number" class="form-input" v-model.number="vmSnapshotConfig.weekly" 
+                                               @change="saveVmSnapshotConfig()" min="0" max="52">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Monthly</label>
+                                        <input type="number" class="form-input" v-model.number="vmSnapshotConfig.monthly" 
+                                               @change="saveVmSnapshotConfig()" min="0" max="12">
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group" style="margin-top: 16px;">
+                                    <label class="form-label">Template</label>
+                                    <select class="form-input" v-model="vmSnapshotConfig.template" @change="saveVmSnapshotConfig()">
+                                        <option value="production">Production</option>
+                                        <option value="default">Default</option>
+                                        <option value="minimal">Minimal</option>
+                                        <option value="backup">Backup</option>
+                                        <option value="vm">VM</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -7753,6 +7882,20 @@
                 };
                 
                 // VM Snapshot Management
+                const vmSnapshotTab = ref('snapshots');
+                const vmSnapshotConfig = ref({
+                    enabled: false,
+                    schedule: null,
+                    hourly: 0,
+                    daily: 7,
+                    weekly: 4,
+                    monthly: 3,
+                    yearly: 0,
+                    template: 'production'
+                });
+                const vmSnapshotConfigLoading = ref(false);
+                const vmSnapshotConfigSchedulePreset = ref('');
+                
                 const showVmSnapshots = (vm) => {
                     vmSnapshotData.value = {
                         vmId: vm.vmid,
@@ -7761,23 +7904,92 @@
                         nodeName: nodes.value.find(n => n.id == selectedVmNodeId.value)?.name || '',
                         total: 0,
                         datasets: {},
+                        proxmoxTotal: 0,
+                        proxmoxDatasets: {},
+                        sanoidTotal: 0,
+                        sanoidSnapshots: [],
                         loading: true
                     };
+                    vmSnapshotTab.value = 'snapshots';
                     showVmSnapshotModal.value = true;
                     loadVmSnapshots();
+                    loadVmSnapshotConfig();
                 };
                 
                 const loadVmSnapshots = async () => {
                     vmSnapshotData.value.loading = true;
                     try {
-                        const res = await axios.get(`${API}/snapshots/vm/${vmSnapshotData.value.nodeId}/${vmSnapshotData.value.vmId}`);
-                        vmSnapshotData.value.total = res.data.total_snapshots;
-                        vmSnapshotData.value.datasets = res.data.datasets;
-                        vmSnapshotData.value.nodeName = res.data.node_name;
+                        const vmType = nodeVms.value.find(v => v.vmid == vmSnapshotData.value.vmId)?.type || 'qemu';
+                        const res = await axios.get(`${API}/snapshots/vm/${vmSnapshotData.value.nodeId}/${vmSnapshotData.value.vmId}/all`, {
+                            params: { vm_type: vmType }
+                        });
+                        
+                        // Snapshot Proxmox
+                        if (res.data.proxmox_snapshots) {
+                            vmSnapshotData.value.proxmoxTotal = res.data.proxmox_snapshots.total_snapshots || 0;
+                            vmSnapshotData.value.proxmoxDatasets = res.data.proxmox_snapshots.datasets || {};
+                        }
+                        
+                        // Snapshot Sanoid
+                        if (res.data.sanoid_snapshots) {
+                            vmSnapshotData.value.sanoidTotal = res.data.sanoid_snapshots.length || 0;
+                            vmSnapshotData.value.sanoidSnapshots = res.data.sanoid_snapshots || [];
+                        }
+                        
+                        vmSnapshotData.value.total = res.data.total || 0;
+                        vmSnapshotData.value.nodeName = res.data.node_name || vmSnapshotData.value.nodeName;
                     } catch (e) {
                         showToast('Errore caricamento snapshot', 'error');
+                        console.error(e);
                     }
                     vmSnapshotData.value.loading = false;
+                };
+                
+                const loadVmSnapshotConfig = async () => {
+                    vmSnapshotConfigLoading.value = true;
+                    try {
+                        const vmType = nodeVms.value.find(v => v.vmid == vmSnapshotData.value.vmId)?.type || 'qemu';
+                        const res = await axios.get(`${API}/snapshots/vm/${vmSnapshotData.value.nodeId}/${vmSnapshotData.value.vmId}/config`, {
+                            params: { vm_type: vmType }
+                        });
+                        vmSnapshotConfig.value = {
+                            enabled: res.data.enabled || false,
+                            schedule: res.data.schedule || null,
+                            hourly: res.data.hourly || 0,
+                            daily: res.data.daily || 7,
+                            weekly: res.data.weekly || 4,
+                            monthly: res.data.monthly || 3,
+                            yearly: res.data.yearly || 0,
+                            template: res.data.template || 'production'
+                        };
+                        vmSnapshotConfigSchedulePreset.value = getSchedulePreset(vmSnapshotConfig.value.schedule);
+                    } catch (e) {
+                        console.error('Errore caricamento config:', e);
+                    }
+                    vmSnapshotConfigLoading.value = false;
+                };
+                
+                const saveVmSnapshotConfig = async () => {
+                    vmSnapshotConfigLoading.value = true;
+                    try {
+                        const vmType = nodeVms.value.find(v => v.vmid == vmSnapshotData.value.vmId)?.type || 'qemu';
+                        await axios.put(`${API}/snapshots/vm/${vmSnapshotData.value.nodeId}/${vmSnapshotData.value.vmId}/config`, {
+                            enabled: vmSnapshotConfig.value.enabled,
+                            schedule: vmSnapshotConfig.value.schedule,
+                            hourly: vmSnapshotConfig.value.hourly,
+                            daily: vmSnapshotConfig.value.daily,
+                            weekly: vmSnapshotConfig.value.weekly,
+                            monthly: vmSnapshotConfig.value.monthly,
+                            yearly: vmSnapshotConfig.value.yearly,
+                            template: vmSnapshotConfig.value.template
+                        }, {
+                            params: { vm_type: vmType }
+                        });
+                        showToast('Configurazione salvata', 'success');
+                    } catch (e) {
+                        showToast(e.response?.data?.detail || 'Errore salvataggio configurazione', 'error');
+                    }
+                    vmSnapshotConfigLoading.value = false;
                 };
                 
                 const rollbackToSnapshot = async (snap) => {
@@ -7929,6 +8141,8 @@
                     setupMeshSSH,
                     // VM Snapshot functions
                     showVmSnapshots, loadVmSnapshots, rollbackToSnapshot, cloneSnapshot,
+                    vmSnapshotTab, vmSnapshotConfig, vmSnapshotConfigLoading, vmSnapshotConfigSchedulePreset,
+                    loadVmSnapshotConfig, saveVmSnapshotConfig,
                     createBackupJobFromVm, createRecoveryJobFromVm, createSyncJobFromVm,
                     // Recovery Jobs functions
                     loadRecoveryJobs, loadSourceVms, createRecoveryJob, runRecoveryJob, 

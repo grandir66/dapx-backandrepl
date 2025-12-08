@@ -65,6 +65,11 @@ class SanoidConfigService:
         autosnap: bool = True,
         autoprune: bool = True,
         keep_snapshots: int = 7,
+        hourly: Optional[int] = None,
+        daily: Optional[int] = None,
+        weekly: Optional[int] = None,
+        monthly: Optional[int] = None,
+        yearly: Optional[int] = None,
         port: int = 22,
         username: str = "root",
         key_path: str = "/root/.ssh/id_rsa"
@@ -77,7 +82,8 @@ class SanoidConfigService:
             dataset: Dataset ZFS da configurare
             autosnap: Se True, sanoid crea snapshot automaticamente
             autoprune: Se True, sanoid elimina snapshot vecchie
-            keep_snapshots: Numero di snapshot da mantenere (convertito in daily)
+            keep_snapshots: Numero di snapshot da mantenere (usato se hourly/daily/weekly/monthly non specificati)
+            hourly, daily, weekly, monthly, yearly: Parametri retention specifici
         """
         try:
             # Leggi configurazione attuale
@@ -99,18 +105,31 @@ class SanoidConfigService:
                         new_lines.append(line)
                 current_config = '\n'.join(new_lines)
             
-            # Costruisci nuova configurazione per il dataset
-            # Usa hourly per permettere snapshot multiple nello stesso giorno
-            new_config = self._build_dataset_config(
-                dataset=dataset,
-                autosnap=autosnap,
-                autoprune=autoprune,
-                hourly=keep_snapshots,  # Mantiene N snapshot orarie
-                daily=0,
-                weekly=0,
-                monthly=0,
-                yearly=0
-            )
+            # Usa parametri specifici se forniti, altrimenti usa keep_snapshots
+            if hourly is not None or daily is not None or weekly is not None or monthly is not None or yearly is not None:
+                new_config = self._build_dataset_config(
+                    dataset=dataset,
+                    autosnap=autosnap,
+                    autoprune=autoprune,
+                    hourly=hourly or 0,
+                    daily=daily or 0,
+                    weekly=weekly or 0,
+                    monthly=monthly or 0,
+                    yearly=yearly or 0
+                )
+            else:
+                # Costruisci nuova configurazione per il dataset
+                # Usa hourly per permettere snapshot multiple nello stesso giorno
+                new_config = self._build_dataset_config(
+                    dataset=dataset,
+                    autosnap=autosnap,
+                    autoprune=autoprune,
+                    hourly=keep_snapshots,  # Mantiene N snapshot orarie
+                    daily=0,
+                    weekly=0,
+                    monthly=0,
+                    yearly=0
+                )
             
             # Combina configurazioni
             final_config = current_config.rstrip() + "\n" + new_config

@@ -672,6 +672,36 @@ class VMRegistry(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class VMSnapshotConfig(Base):
+    """Configurazione snapshot Sanoid per VM"""
+    __tablename__ = "vm_snapshot_config"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    node_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)
+    vm_id = Column(Integer, nullable=False)
+    vm_type = Column(String(10), nullable=False)  # qemu, lxc
+    
+    enabled = Column(Boolean, default=False)
+    schedule = Column(String(100), nullable=True)  # Cron expression
+    
+    # Retention settings
+    hourly = Column(Integer, default=0)
+    daily = Column(Integer, default=7)
+    weekly = Column(Integer, default=4)
+    monthly = Column(Integer, default=3)
+    yearly = Column(Integer, default=0)
+    
+    template = Column(String(50), default="production")
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Unique constraint: una sola config per VM
+    __table_args__ = (
+        {'sqlite_autoincrement': True},
+    )
+
+
 # ============== API KEY MODELS ==============
 
 class APIKey(Base):
