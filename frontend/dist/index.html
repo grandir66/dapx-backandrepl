@@ -2039,95 +2039,28 @@
                     <p class="page-subtitle">Replica completa di Virtual Machine tra nodi Proxmox (ZFS o BTRFS)</p>
                 </div>
                 
-                <!-- Wizard Nuova Replica VM -->
-                <div class="card" v-if="!vmReplicaWizard.active && !btrfsWizard.active">
-                    <div class="card-header">
-                        <h3 class="card-title">Crea Nuova Replica VM</h3>
+                <!-- Stats -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">{{ vmGroups.length }}</div>
+                        <div class="stat-label">VM Replicate</div>
                     </div>
-                    
-                    <!-- Sync Method Selector -->
-                    <div style="padding: 20px; border-bottom: 1px solid var(--border-color);">
-                        <label class="form-label" style="margin-bottom: 12px;">🔧 Metodo di Sincronizzazione</label>
-                        <div style="display: flex; gap: 12px;">
-                            <label class="sync-method-option" :class="{ active: vmReplicaWizard.syncMethod === 'syncoid' }" @click="vmReplicaWizard.syncMethod = 'syncoid'">
-                                <input type="radio" v-model="vmReplicaWizard.syncMethod" value="syncoid" style="display: none;">
-                                <div class="sync-method-icon">🗄️</div>
-                                <div class="sync-method-title">ZFS / Syncoid</div>
-                                <div class="sync-method-desc">Replica con ZFS send/receive tramite Syncoid</div>
-                            </label>
-                            <label class="sync-method-option" :class="{ active: vmReplicaWizard.syncMethod === 'btrfs_send' }" @click="vmReplicaWizard.syncMethod = 'btrfs_send'">
-                                <input type="radio" v-model="vmReplicaWizard.syncMethod" value="btrfs_send" style="display: none;">
-                                <div class="sync-method-icon">📦</div>
-                                <div class="sync-method-title">BTRFS</div>
-                                <div class="sync-method-desc">Replica con btrfs send/receive</div>
-                            </label>
-                        </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ syncJobs.length }}</div>
+                        <div class="stat-label">Job Totali</div>
                     </div>
-                    
-                    <div class="grid-2" style="padding: 20px;">
-                        <div class="form-group">
-                            <label class="form-label">📤 Nodo Sorgente</label>
-                            <select class="form-input" v-model="vmReplicaWizard.sourceNodeId" @change="loadSourceVMs">
-                                <option value="">Seleziona nodo sorgente</option>
-                                <option v-for="n in nodes" :key="n.id" :value="n.id">{{ n.name }} ({{ n.hostname }}) {{ n.storage_type === 'btrfs' ? '🔶 BTRFS' : '' }}</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">📥 Nodo Destinazione</label>
-                            <select class="form-input" v-model="vmReplicaWizard.destNodeId" @change="loadDestPools">
-                                <option value="">Seleziona nodo destinazione</option>
-                                <option v-for="n in nodes" :key="n.id" :value="n.id" :disabled="n.id == vmReplicaWizard.sourceNodeId">{{ n.name }} ({{ n.hostname }}) {{ n.storage_type === 'btrfs' ? '🔶 BTRFS' : '' }}</option>
-                            </select>
-                        </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ syncJobs.filter(j => j.last_status === 'success').length }}</div>
+                        <div class="stat-label">Ultimi OK</div>
                     </div>
-                    
-                    <!-- BTRFS Configuration (shown when BTRFS method selected) -->
-                    <div v-if="vmReplicaWizard.syncMethod === 'btrfs_send'" style="padding: 0 20px 20px; border-top: 1px solid var(--border-color); margin-top: 0; padding-top: 20px;">
-                        <h4 style="margin-bottom: 12px; color: #ff9f43;">📦 Configurazione BTRFS</h4>
-                        <div class="grid-2">
-                            <div class="form-group">
-                                <label class="form-label">Mount Point BTRFS Sorgente</label>
-                                <input type="text" class="form-input" v-model="vmReplicaWizard.btrfsMount" placeholder="/mnt/btrfs-storage">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Directory Snapshot</label>
-                                <input type="text" class="form-input" v-model="vmReplicaWizard.btrfsSnapshotDir" placeholder="Lascia vuoto per default (.snapshots)">
-                            </div>
-                        </div>
-                        <div class="grid-2">
-                            <div class="form-group">
-                                <label class="form-label">Max Snapshot da Mantenere</label>
-                                <input type="number" class="form-input" v-model.number="vmReplicaWizard.btrfsMaxSnapshots" min="1" max="50">
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Lista VM -->
-                    <div v-if="sourceVMs.length > 0" style="padding: 0 20px 20px;">
-                        <h4 style="margin-bottom: 12px; color: var(--accent-primary);">🖥️ Seleziona VM da Replicare</h4>
-                        <div class="table-container">
-                            <table>
-                                <thead><tr><th>VMID</th><th>Nome</th><th>Tipo</th><th>Stato</th><th>Azione</th></tr></thead>
-                                <tbody>
-                                    <tr v-for="vm in sourceVMs" :key="vm.vmid">
-                                        <td><strong>{{ vm.vmid }}</strong></td>
-                                        <td>{{ vm.name }}</td>
-                                        <td><span class="badge badge-info">{{ vm.type }}</span></td>
-                                        <td><span class="badge" :class="vm.status === 'running' ? 'badge-success' : 'badge-warning'">{{ vm.status }}</span></td>
-                                        <td>
-                                            <button class="btn btn-primary btn-sm" @click="selectVMForReplica(vm)" :disabled="!vmReplicaWizard.destNodeId">
-                                                Configura Replica →
-                                            </button>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ syncJobs.filter(j => j.last_status === 'failed').length }}</div>
+                        <div class="stat-label">Falliti</div>
                     </div>
                 </div>
                 
-                <!-- Configurazione Replica VM -->
-                <div class="card" v-if="vmReplicaWizard.active">
+                <!-- Configurazione Replica VM - Mostrata come secondo step nel modal -->
+                <div class="card" v-if="false && vmReplicaWizard.active">
                     <div class="card-header">
                         <h3 class="card-title">⚙️ Configura Replica VM {{ vmReplicaWizard.selectedVM?.vmid }} - {{ vmReplicaWizard.selectedVM?.name }}</h3>
                         <button class="btn btn-secondary" @click="cancelVMReplica">← Indietro</button>
@@ -2269,10 +2202,13 @@
                 </div>
                 
                 <!-- Job Esistenti Raggruppati per VM -->
-                <div class="card" style="margin-top: 20px;">
+                <div class="card">
                     <div class="card-header">
                         <h3 class="card-title">📋 Repliche VM Configurate</h3>
-                        <button class="btn btn-secondary" @click="loadSyncJobs" :disabled="loading">🔄 Aggiorna</button>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-primary" @click="openReplicaWizardModal">➕ Nuova Replica</button>
+                            <button class="btn btn-secondary" @click="loadSyncJobs" :disabled="loading">🔄 Aggiorna</button>
+                        </div>
                     </div>
                     
                     <div v-if="vmGroups.length > 0">
@@ -2346,7 +2282,7 @@
                     </div>
                     
                     <div v-if="vmGroups.length === 0 && singleJobs.length === 0" style="padding: 40px; text-align: center; color: var(--text-secondary);">
-                        Nessuna replica configurata. Seleziona una VM sopra per iniziare.
+                        Nessuna replica configurata. Clicca "➕ Nuova Replica" per iniziare.
                     </div>
                 </div>
             </div>
@@ -5162,6 +5098,219 @@
             </div>
         </div>
         
+        <!-- Replica Wizard Modal -->
+        <div class="modal-overlay" v-if="isAuthenticated && showReplicaWizardModal" @click.self="showReplicaWizardModal = false">
+            <div class="modal" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header">
+                    <h3 class="modal-title">{{ vmReplicaWizard.active ? '⚙️ Configura Replica' : '➕ Nuova Replica VM' }}</h3>
+                    <button class="btn btn-icon" @click="closeReplicaWizardModal">✕</button>
+                </div>
+                <div class="modal-body">
+                    <!-- Step 1: Selezione Nodi e VM -->
+                    <div v-if="!vmReplicaWizard.active">
+                        <!-- Sync Method Selector -->
+                        <div style="margin-bottom: 20px;">
+                            <label class="form-label" style="margin-bottom: 12px;">🔧 Metodo di Sincronizzazione</label>
+                            <div style="display: flex; gap: 12px;">
+                                <label class="sync-method-option" :class="{ active: vmReplicaWizard.syncMethod === 'syncoid' }" @click="vmReplicaWizard.syncMethod = 'syncoid'" style="flex: 1; cursor: pointer;">
+                                    <input type="radio" v-model="vmReplicaWizard.syncMethod" value="syncoid" style="display: none;">
+                                    <div class="sync-method-icon">🗄️</div>
+                                    <div class="sync-method-title">ZFS / Syncoid</div>
+                                    <div class="sync-method-desc">Replica con ZFS send/receive</div>
+                                </label>
+                                <label class="sync-method-option" :class="{ active: vmReplicaWizard.syncMethod === 'btrfs_send' }" @click="vmReplicaWizard.syncMethod = 'btrfs_send'" style="flex: 1; cursor: pointer;">
+                                    <input type="radio" v-model="vmReplicaWizard.syncMethod" value="btrfs_send" style="display: none;">
+                                    <div class="sync-method-icon">📦</div>
+                                    <div class="sync-method-title">BTRFS</div>
+                                    <div class="sync-method-desc">Replica con btrfs send/receive</div>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label">📤 Nodo Sorgente</label>
+                                <select class="form-input" v-model="vmReplicaWizard.sourceNodeId" @change="loadSourceVMs">
+                                    <option value="">Seleziona nodo sorgente</option>
+                                    <option v-for="n in nodes" :key="n.id" :value="n.id">{{ n.name }} ({{ n.hostname }})</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">📥 Nodo Destinazione</label>
+                                <select class="form-input" v-model="vmReplicaWizard.destNodeId" @change="loadDestPools">
+                                    <option value="">Seleziona nodo destinazione</option>
+                                    <option v-for="n in nodes" :key="n.id" :value="n.id" :disabled="n.id == vmReplicaWizard.sourceNodeId">{{ n.name }} ({{ n.hostname }})</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <!-- BTRFS Config -->
+                        <div v-if="vmReplicaWizard.syncMethod === 'btrfs_send'" style="padding: 16px; background: var(--bg-tertiary); border-radius: 8px; margin: 16px 0;">
+                            <h4 style="margin-bottom: 12px; color: #ff9f43;">📦 Configurazione BTRFS</h4>
+                            <div class="grid-2">
+                                <div class="form-group">
+                                    <label class="form-label">Mount Point BTRFS Sorgente</label>
+                                    <input type="text" class="form-input" v-model="vmReplicaWizard.btrfsMount" placeholder="/mnt/btrfs-storage">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Max Snapshot da Mantenere</label>
+                                    <input type="number" class="form-input" v-model.number="vmReplicaWizard.btrfsMaxSnapshots" min="1" max="50">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Lista VM (solo se nodo sorgente selezionato) -->
+                        <div v-if="vmReplicaWizard.sourceNodeId && sourceVMs.length > 0" style="margin-top: 20px;">
+                            <h4 style="margin-bottom: 12px; color: var(--accent-primary);">🖥️ Seleziona VM da Replicare</h4>
+                            <div class="table-container" style="max-height: 300px; overflow-y: auto;">
+                                <table>
+                                    <thead><tr><th>VMID</th><th>Nome</th><th>Tipo</th><th>Stato</th><th>Azione</th></tr></thead>
+                                    <tbody>
+                                        <tr v-for="vm in sourceVMs" :key="vm.vmid">
+                                            <td><strong>{{ vm.vmid }}</strong></td>
+                                            <td>{{ vm.name }}</td>
+                                            <td><span class="badge badge-info">{{ vm.type }}</span></td>
+                                            <td><span class="badge" :class="vm.status === 'running' ? 'badge-success' : 'badge-warning'">{{ vm.status }}</span></td>
+                                            <td>
+                                                <button class="btn btn-primary btn-sm" @click="selectVMForReplica(vm)" :disabled="!vmReplicaWizard.destNodeId">
+                                                    Configura →
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <div v-else-if="vmReplicaWizard.sourceNodeId && sourceVMs.length === 0" style="padding: 20px; text-align: center; color: var(--text-secondary);">
+                            <span v-if="loading">⏳ Caricamento VM...</span>
+                            <span v-else>Nessuna VM trovata su questo nodo</span>
+                        </div>
+                        
+                        <div v-else-if="!vmReplicaWizard.sourceNodeId" style="padding: 20px; text-align: center; color: var(--text-secondary);">
+                            Seleziona un nodo sorgente per visualizzare le VM disponibili
+                        </div>
+                    </div>
+                    
+                    <!-- Step 2: Configurazione Dischi e Opzioni -->
+                    <div v-if="vmReplicaWizard.active">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <h4 style="color: var(--accent-primary); margin: 0;">
+                                🖥️ {{ vmReplicaWizard.selectedVM?.name || 'VM' }} ({{ vmReplicaWizard.selectedVM?.vmid }})
+                            </h4>
+                            <button class="btn btn-secondary btn-sm" @click="cancelVMReplica">← Cambia VM</button>
+                        </div>
+                        
+                        <!-- Dischi -->
+                        <div v-if="vmReplicaWizard.disks.length > 0">
+                            <h5 style="margin-bottom: 8px; color: var(--accent-secondary);">💾 Dischi da Replicare</h5>
+                            <div class="table-container" style="margin-bottom: 16px;">
+                                <table>
+                                    <thead><tr><th>Disco</th><th>Dataset ZFS</th><th>Dimensione</th><th>Replica</th></tr></thead>
+                                    <tbody>
+                                        <tr v-for="disk in vmReplicaWizard.disks" :key="disk.disk_name">
+                                            <td><strong>{{ disk.disk_name }}</strong></td>
+                                            <td><code style="font-size: 0.85rem;">{{ disk.dataset || 'N/A' }}</code></td>
+                                            <td><span class="badge badge-info">{{ disk.size }}</span></td>
+                                            <td><input type="checkbox" v-model="disk.selected" :disabled="!disk.dataset"></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <!-- Destinazione -->
+                        <h5 style="margin: 16px 0 8px; color: var(--accent-warning);">📥 Destinazione</h5>
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label">Pool ZFS Destinazione</label>
+                                <select class="form-input" v-model="vmReplicaWizard.destPool">
+                                    <option value="">Seleziona pool</option>
+                                    <option v-for="pool in destPools" :key="pool" :value="pool">{{ pool }}</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Sottocartella ZFS</label>
+                                <input type="text" class="form-input" v-model="vmReplicaWizard.destSubfolder" placeholder="replica">
+                            </div>
+                        </div>
+                        <div class="grid-3">
+                            <div class="form-group">
+                                <label class="form-label">VMID Destinazione</label>
+                                <input type="number" class="form-input" v-model="vmReplicaWizard.destVmId" :placeholder="vmReplicaWizard.selectedVM?.vmid">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Suffisso Nome VM</label>
+                                <input type="text" class="form-input" v-model="vmReplicaWizard.destVmNameSuffix" placeholder="-replica">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Schedule</label>
+                                <select class="form-input" v-model="vmReplicaWizard.schedulePreset" @change="onSchedulePresetChange(vmReplicaWizard)">
+                                    <option v-for="preset in schedulePresets" :key="preset.value" :value="preset.value">{{ preset.label }}</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <!-- Opzioni -->
+                        <h5 style="margin: 16px 0 8px; color: var(--accent-info);">⚡ Opzioni</h5>
+                        <div class="grid-3">
+                            <div class="form-group">
+                                <label class="form-label">Compressione</label>
+                                <select class="form-input" v-model="vmReplicaWizard.compress">
+                                    <option value="lz4">LZ4 (veloce)</option>
+                                    <option value="zstd">ZSTD (bilanciato)</option>
+                                    <option value="gzip">GZIP</option>
+                                    <option value="none">Nessuna</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">📸 Versioni da mantenere</label>
+                                <input type="number" class="form-input" v-model.number="vmReplicaWizard.keep_snapshots" min="0" max="100">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" style="display: flex; align-items: center; gap: 8px; margin-top: 24px;">
+                                    <input type="checkbox" v-model="vmReplicaWizard.registerVM">
+                                    Registra VM su destinazione
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- Notifiche -->
+                        <h5 style="margin: 16px 0 8px; color: var(--accent-info);">📧 Notifiche</h5>
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label">Invio Email</label>
+                                <select class="form-input" v-model="vmReplicaWizard.notify_mode">
+                                    <option value="daily">📅 Riepilogo giornaliero</option>
+                                    <option value="always">📨 Ad ogni esecuzione</option>
+                                    <option value="failure">⚠️ Solo errori</option>
+                                    <option value="never">🔕 Disabilitate</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Soggetto Email</label>
+                                <input type="text" class="form-input" v-model="vmReplicaWizard.notify_subject" placeholder="[REPLICA] {vm_name}">
+                            </div>
+                        </div>
+                        
+                        <!-- Preview -->
+                        <div v-if="vmReplicaWizard.destPool" style="background: var(--bg-tertiary); padding: 12px; border-radius: 8px; margin-top: 16px;">
+                            <h5 style="margin-bottom: 8px;">📋 Anteprima Dataset:</h5>
+                            <div v-for="disk in vmReplicaWizard.disks.filter(d => d.selected && d.dataset)" :key="disk.disk_name" style="font-family: monospace; font-size: 0.85rem; margin: 4px 0;">
+                                {{ disk.disk_name }}: <span style="color: var(--accent-primary);">{{ vmReplicaWizard.destPool }}{{ vmReplicaWizard.destSubfolder ? '/' + vmReplicaWizard.destSubfolder : '' }}/{{ disk.dataset.split('/').pop() }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer" v-if="vmReplicaWizard.active">
+                    <button class="btn btn-secondary" @click="closeReplicaWizardModal">Annulla</button>
+                    <button class="btn btn-primary" @click="createVMReplica" :disabled="loading || !vmReplicaWizard.destPool || vmReplicaWizard.disks.filter(d => d.selected).length === 0">
+                        🚀 Crea {{ vmReplicaWizard.disks.filter(d => d.selected).length }} Job di Replica
+                    </button>
+                </div>
+            </div>
+        </div>
+        
         <!-- Migration Job Modal -->
         <div class="modal-overlay" v-if="isAuthenticated && showMigrationJobModal" @click.self="showMigrationJobModal = false">
             <div class="modal" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
@@ -6047,6 +6196,7 @@
                 // VM Replica Wizard
                 const sourceVMs = ref([]);
                 const destPools = ref([]);
+                const showReplicaWizardModal = ref(false);
                 const vmReplicaWizard = ref({
                     active: false,
                     sourceNodeId: '',
@@ -7580,6 +7730,28 @@
                     vmReplicaWizard.value.disks = [];
                 };
                 
+                const openReplicaWizardModal = () => {
+                    // Reset wizard state
+                    vmReplicaWizard.value.active = false;
+                    vmReplicaWizard.value.sourceNodeId = '';
+                    vmReplicaWizard.value.destNodeId = '';
+                    vmReplicaWizard.value.selectedVM = null;
+                    vmReplicaWizard.value.disks = [];
+                    vmReplicaWizard.value.destPool = '';
+                    vmReplicaWizard.value.destSubfolder = 'replica';
+                    vmReplicaWizard.value.destVmId = '';
+                    vmReplicaWizard.value.destVmNameSuffix = '-replica';
+                    vmReplicaWizard.value.syncMethod = 'syncoid';
+                    sourceVMs.value = [];
+                    destPools.value = [];
+                    showReplicaWizardModal.value = true;
+                };
+                
+                const closeReplicaWizardModal = () => {
+                    showReplicaWizardModal.value = false;
+                    vmReplicaWizard.value.active = false;
+                };
+                
                 const createVMReplica = async () => {
                     const w = vmReplicaWizard.value;
                     if (!w.destPool) { showToast('Seleziona pool destinazione', 'error'); return; }
@@ -7620,7 +7792,7 @@
                         
                         const methodLabel = w.syncMethod === 'btrfs_send' ? 'BTRFS' : 'ZFS';
                         showToast(`✅ Creati ${res.data.jobs_created} job ${methodLabel} per VM ${w.selectedVM.vmid}`, 'success');
-                        cancelVMReplica();
+                        closeReplicaWizardModal();
                         await loadSyncJobs();
                     } catch (e) {
                         showToast('Errore: ' + (e.response?.data?.detail || e.message), 'error');
@@ -8792,6 +8964,9 @@
                     } else if (newPage === 'migration') {
                         loadMigrationJobs();
                         loadNodes();
+                    } else if (newPage === 'sync') {
+                        loadSyncJobs();
+                        loadNodes();
                     }
                 });
                 
@@ -8817,7 +8992,7 @@
                     sourceDatasets, destDatasets, selectedSchedule,
                     destRootPool, destSubPath, destPools, suggestedDestDataset,
                     // VM Replica
-                    sourceVMs, vmReplicaWizard, btrfsWizard, vmGroups, singleJobs,
+                    sourceVMs, vmReplicaWizard, btrfsWizard, vmGroups, singleJobs, showReplicaWizardModal,
                     // Recovery Jobs (PBS)
                     recoveryJobs, pbsNodes, pveNodes, showAddRecoveryJobModal, sourceVmsForRecovery, newRecoveryJob,
                     // Backup Jobs
@@ -8859,7 +9034,7 @@
                     // Dashboard functions
                     loadDashboard, loadNodeDetails, loadVMDetails, viewNodeDetails, viewVMDetails,
                     // VM Replica functions
-                    loadSourceVMs, loadDestPools, selectVMForReplica, cancelVMReplica, createVMReplica,
+                    loadSourceVMs, loadDestPools, selectVMForReplica, cancelVMReplica, createVMReplica, openReplicaWizardModal, closeReplicaWizardModal,
                     runVMGroup, deleteVMGroup, registerVMGroup,
                     // Snapshot functions
                     showGroupSnapshots, refreshSnapshots,
