@@ -76,13 +76,11 @@ class NotificationService:
         error: Optional[str] = None,
         details: Optional[str] = None,
         job_id: Optional[int] = None,
-        is_scheduled: bool = False
+        is_scheduled: bool = False,
+        notify_mode: str = "daily"  # daily, always, failure, never
     ) -> Dict[str, Any]:
         """
         Invia notifica per un job completato su tutti i canali abilitati.
-        
-        Per job schedulati (ricorrenti), limita a max 1 notifica di successo al giorno.
-        I fallimenti vengono sempre notificati.
         
         Args:
             job_name: Nome del job
@@ -94,16 +92,26 @@ class NotificationService:
             details: Dettagli aggiuntivi
             job_id: ID del job (per tracking notifiche giornaliere)
             is_scheduled: True se job schedulato/ricorrente
+            notify_mode: Modalità notifica del job (daily, always, failure, never)
         
         Returns:
             Dict con risultati per ogni canale
         """
+        # Verifica notify_mode del job
+        if notify_mode == "never":
+            logger.debug(f"Notifiche disabilitate per job {job_name}")
+            return {"sent": False, "reason": "notify_mode_never"}
+        
+        if notify_mode == "failure" and status != "failed":
+            logger.debug(f"Notifica solo per errori, job {job_name} ha status {status}")
+            return {"sent": False, "reason": "notify_mode_failure_only"}
+        
         config = self._load_config()
         if not config:
             logger.debug("Notifiche non configurate")
             return {"sent": False, "reason": "not_configured"}
         
-        # Verifica se notificare in base allo status
+        # Verifica se notificare in base allo status globale
         should_notify = (
             (status == "success" and config.notify_on_success) or
             (status == "failed" and config.notify_on_failure) or
@@ -114,14 +122,15 @@ class NotificationService:
             logger.debug(f"Notifica non richiesta per status: {status}")
             return {"sent": False, "reason": f"notify_on_{status}_disabled"}
         
-        # Per job schedulati: limita notifiche successo a 1 al giorno
+        # Per notify_mode "daily": limita notifiche successo a 1 al giorno
+        # Per notify_mode "always": notifica sempre
         # I fallimenti vengono sempre notificati
-        if is_scheduled and job_id and status == "success":
+        if notify_mode == "daily" and is_scheduled and job_id and status == "success":
             today = datetime.utcnow().date()
             last_notification = self._daily_job_notifications.get(job_id)
             
             if last_notification and last_notification.date() == today:
-                logger.debug(f"Notifica già inviata oggi per job {job_id}, skip")
+                logger.debug(f"Notifica già inviata oggi per job {job_id}, skip (notify_mode=daily)")
                 return {"sent": False, "reason": "daily_limit_reached"}
             
             # Aggiorna tracking

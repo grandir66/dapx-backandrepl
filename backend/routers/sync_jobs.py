@@ -30,13 +30,17 @@ async def send_job_notification_helper(
     duration: int = None,
     error: str = None,
     details: str = None,
-    is_scheduled: bool = False
+    is_scheduled: bool = False,
+    notify_mode: str = "daily"
 ):
     """
     Invia notifica per un job di replica usando il notification_service centralizzato.
     
-    Per job manuali (is_scheduled=False): sempre notifica
-    Per job schedulati (is_scheduled=True): max 1 notifica successo al giorno
+    notify_mode controlla quando inviare:
+    - 'always': sempre
+    - 'daily': max 1 al giorno per successi
+    - 'failure': solo errori
+    - 'never': mai
     """
     from services.notification_service import notification_service
     
@@ -49,7 +53,8 @@ async def send_job_notification_helper(
         error=error,
         details=details[:1000] if details else None,
         job_id=job_id,
-        is_scheduled=is_scheduled
+        is_scheduled=is_scheduled,
+        notify_mode=notify_mode
     )
 
 
@@ -256,7 +261,7 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
         
         db_session.commit()
         
-        # Invia notifica se configurata (job manuale = is_scheduled=False)
+        # Invia notifica se configurata
         try:
             await send_job_notification_helper(
                 job_id=job_id,
@@ -267,7 +272,8 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                 duration=result["duration"],
                 error=result.get("error") if not result["success"] else None,
                 details=result.get("output"),
-                is_scheduled=False  # Job manuale: sempre notifica
+                is_scheduled=False,
+                notify_mode=job.notify_mode or "daily"
             )
         except Exception as notify_err:
             # Non bloccare se la notifica fallisce

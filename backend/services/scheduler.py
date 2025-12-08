@@ -272,7 +272,7 @@ class SchedulerService:
             db.commit()
             
             # Invia notifica job completato
-            # Per job schedulati: max 1 notifica successo al giorno, fallimenti sempre notificati
+            # Rispetta notify_mode del job: daily, always, failure, never
             try:
                 await notification_service.send_job_notification(
                     job_name=job.name,
@@ -283,7 +283,8 @@ class SchedulerService:
                     error=result.get("error") if not result["success"] else None,
                     details=f"Trasferito: {result.get('transferred', 'N/A')}" if result["success"] else None,
                     job_id=job_id,
-                    is_scheduled=True  # Job eseguito dallo scheduler = ricorrente
+                    is_scheduled=True,
+                    notify_mode=job.notify_mode or "daily"
                 )
             except Exception as notify_err:
                 logger.warning(f"Errore invio notifica per job {job_id}: {notify_err}")
@@ -399,22 +400,22 @@ class SchedulerService:
             
             db.commit()
             
-            # Invia notifica se configurato
-            if job.notify_mode == 'always' or (job.notify_mode == 'failure' and job.last_status == 'failed'):
-                try:
-                    await notification_service.send_job_notification(
-                        job_name=job.name,
-                        status=job.last_status,
-                        source=node.name,
-                        destination=job.dest_path,
-                        duration=duration,
-                        error=job.last_error if job.last_status == 'failed' else None,
-                        details=f"File: {result.get('backup_name', 'N/A')}, Size: {result.get('size_human', 'N/A')}",
-                        job_id=job_id,
-                        is_scheduled=True
-                    )
-                except Exception as notify_err:
-                    logger.warning(f"Errore invio notifica per HostBackupJob {job_id}: {notify_err}")
+            # Invia notifica - il notification_service gestisce notify_mode internamente
+            try:
+                await notification_service.send_job_notification(
+                    job_name=job.name,
+                    status=job.last_status,
+                    source=node.name,
+                    destination=job.dest_path,
+                    duration=duration,
+                    error=job.last_error if job.last_status == 'failed' else None,
+                    details=f"File: {result.get('backup_name', 'N/A')}, Size: {result.get('size_human', 'N/A')}",
+                    job_id=job_id,
+                    is_scheduled=True,
+                    notify_mode=job.notify_mode or "daily"
+                )
+            except Exception as notify_err:
+                logger.warning(f"Errore invio notifica per HostBackupJob {job_id}: {notify_err}")
             
         except Exception as e:
             logger.error(f"Errore esecuzione HostBackupJob {job_id}: {e}")
