@@ -373,6 +373,7 @@ class ProxmoxService:
         source_storage: Optional[str] = None,
         dest_storage: Optional[str] = None,
         dest_zfs_pool: Optional[str] = None,
+        vm_name_suffix: Optional[str] = None,
         port: int = 22,
         username: str = "root",
         key_path: str = "/root/.ssh/id_rsa"
@@ -383,6 +384,7 @@ class ProxmoxService:
         Se config_content è fornito, crea il file di configurazione.
         Se dest_storage è specificato, sostituisce lo storage nella config.
         Se dest_zfs_pool è specificato, crea lo storage se non esiste.
+        Se vm_name_suffix è specificato, aggiunge il suffisso al nome della VM.
         """
         
         if vm_type == "qemu":
@@ -421,6 +423,17 @@ class ProxmoxService:
             if source_storage and dest_storage and source_storage != dest_storage:
                 # Sostituisci il nome dello storage (es: local-zfs: -> replica-storage:)
                 config_content = config_content.replace(f"{source_storage}:", f"{dest_storage}:")
+            
+            # Se abbiamo un suffisso per il nome VM, aggiungiamolo
+            if vm_name_suffix:
+                import re
+                # Cerca la linea "name: xxx" e aggiungi il suffisso
+                name_pattern = re.compile(r'^(name:\s*)(.+)$', re.MULTILINE)
+                match = name_pattern.search(config_content)
+                if match:
+                    original_name = match.group(2).strip()
+                    new_name = original_name + vm_name_suffix
+                    config_content = name_pattern.sub(f'name: {new_name}', config_content)
             
             # Crea il file di configurazione
             cmd = f"""

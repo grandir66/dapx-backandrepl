@@ -223,6 +223,7 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                             source_storage=job.source_storage,
                             dest_storage=job.dest_storage,
                             dest_zfs_pool=dest_zfs_pool,
+                            vm_name_suffix=job.dest_vm_name_suffix,
                             port=dest_node.ssh_port,
                             username=dest_node.ssh_user,
                             key_path=dest_node.ssh_key_path
@@ -330,6 +331,7 @@ class SyncJobCreate(BaseModel):
     dest_vm_id: Optional[int] = None  # ID VM destinazione (se diverso da sorgente)
     vm_type: Optional[str] = None
     vm_name: Optional[str] = None
+    dest_vm_name_suffix: Optional[str] = None  # Suffisso per nome VM su destinazione (es: -replica)
     disk_name: Optional[str] = None  # Nome disco (per BTRFS)
     
     # Retry
@@ -366,6 +368,7 @@ class SyncJobUpdate(BaseModel):
     dest_vm_id: Optional[int] = None
     vm_type: Optional[str] = None
     vm_name: Optional[str] = None
+    dest_vm_name_suffix: Optional[str] = None  # Suffisso per nome VM su destinazione
     disk_name: Optional[str] = None
     source_storage: Optional[str] = None  # Storage Proxmox sorgente
     dest_storage: Optional[str] = None  # Storage Proxmox destinazione
@@ -404,6 +407,7 @@ class SyncJobResponse(BaseModel):
     dest_vm_id: Optional[int]
     vm_type: Optional[str]
     vm_name: Optional[str]
+    dest_vm_name_suffix: Optional[str] = None
     vm_group_id: Optional[str]
     disk_name: Optional[str]
     retry_on_failure: bool
@@ -525,6 +529,7 @@ class VMReplicaCreate(BaseModel):
     dest_subfolder: str = "replica"  # Sottocartella (es: replica)
     dest_storage: Optional[str] = None  # Nome storage Proxmox destinazione (se vuoto, usa dest_subfolder)
     dest_vm_id: Optional[int] = None  # ID VM destinazione se diverso
+    dest_vm_name_suffix: Optional[str] = None  # Suffisso per nome VM su destinazione (es: -replica)
     schedule: Optional[str] = None
     compress: str = "lz4"
     recursive: bool = False
@@ -632,6 +637,7 @@ async def create_vm_replica_jobs(
             dest_vm_id=dest_vmid if dest_vmid != vm_data.vm_id else None,
             vm_type=vm_data.vm_type,
             vm_name=vm_data.vm_name,
+            dest_vm_name_suffix=vm_data.dest_vm_name_suffix,
             vm_group_id=vm_group_id,
             disk_name=disk.get("disk_name"),
             source_storage=source_storage,
@@ -1070,6 +1076,7 @@ async def register_vm_manually(
         source_storage=job.source_storage,
         dest_storage=job.dest_storage,
         dest_zfs_pool=dest_zfs_pool,
+        vm_name_suffix=job.dest_vm_name_suffix,
         port=dest_node.ssh_port,
         username=dest_node.ssh_user,
         key_path=dest_node.ssh_key_path

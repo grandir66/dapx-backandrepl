@@ -2255,10 +2255,15 @@
                                 ⚠️ Questo storage verrà usato nella configurazione della VM replicata
                             </small>
                         </div>
-                        <div class="grid-2">
+                        <div class="grid-3">
                             <div class="form-group">
                                 <label class="form-label">VMID Destinazione <small style="color: var(--text-secondary);">(se diverso)</small></label>
                                 <input type="number" class="form-input" v-model="vmReplicaWizard.destVmId" :placeholder="vmReplicaWizard.selectedVM?.vmid">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Suffisso Nome VM</label>
+                                <input type="text" class="form-input" v-model="vmReplicaWizard.destVmNameSuffix" placeholder="-replica">
+                                <small style="color: var(--text-secondary);">Es: VM "web01" → "web01-replica"</small>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Schedule</label>
@@ -5419,6 +5424,7 @@
                     destSubfolder: 'replica',
                     destStorage: '',  // Nome storage Proxmox destinazione
                     destVmId: '',
+                    destVmNameSuffix: '-replica',  // Suffisso per nome VM su destinazione
                     schedule: '',
                     schedulePreset: '',
                     compress: 'lz4',
@@ -6676,6 +6682,7 @@
                             dest_subfolder: w.destSubfolder,
                             dest_storage: w.destStorage || w.destSubfolder || null,
                             dest_vm_id: w.destVmId ? parseInt(w.destVmId) : null,
+                            dest_vm_name_suffix: w.destVmNameSuffix || null,
                             schedule: w.schedule || null,
                             compress: w.compress,
                             register_vm: w.registerVM,
