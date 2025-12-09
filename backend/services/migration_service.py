@@ -362,6 +362,62 @@ class MigrationService:
             if not snap_result.success:
                 logger.warning(f"Errore creazione snapshot: {snap_result.stderr}")
         
+        # Determina directory di backup con spazio sufficiente
+        # Priorità: /var/lib/vz/dump (standard Proxmox) > /var/tmp > /tmp
+        backup_dir = "/var/lib/vz/dump"
+        
+        # Stima dimensione VM (somma dischi)
+        size_cmd = f"{'qm' if vm_type == 'qemu' else 'pct'} config {vm_id} | grep -E '^(scsi|virtio|ide|sata|rootfs|mp)[0-9]*:' | grep -oP '\\d+G' | head -1"
+        size_result = await ssh_service.execute(
+            hostname=source_hostname,
+            command=size_cmd,
+            port=source_port,
+            username=source_user,
+            key_path=source_key,
+            timeout=30
+        )
+        
+        estimated_size_gb = 50  # Default 50GB se non riusciamo a stimare
+        if size_result.success and size_result.stdout.strip():
+            try:
+                estimated_size_gb = int(size_result.stdout.strip().replace('G', ''))
+            except:
+                pass
+        
+        logger.info(f"Dimensione stimata VM {vm_id}: ~{estimated_size_gb} GB")
+        
+        # Trova directory con spazio sufficiente
+        for test_dir in ["/var/lib/vz/dump", "/var/tmp", "/tmp"]:
+            space_cmd = f"df -BG {test_dir} 2>/dev/null | tail -1 | awk '{{print $4}}' | tr -d 'G'"
+            space_result = await ssh_service.execute(
+                hostname=source_hostname,
+                command=space_cmd,
+                port=source_port,
+                username=source_user,
+                key_path=source_key,
+                timeout=30
+            )
+            
+            if space_result.success and space_result.stdout.strip().isdigit():
+                available_gb = int(space_result.stdout.strip())
+                logger.info(f"Spazio disponibile in {test_dir}: {available_gb} GB")
+                
+                # Serve almeno 1.5x la dimensione stimata (compressione + margine)
+                if available_gb >= estimated_size_gb * 1.5:
+                    backup_dir = test_dir
+                    logger.info(f"Uso {backup_dir} per il backup (spazio sufficiente)")
+                    break
+                else:
+                    logger.warning(f"{test_dir} ha solo {available_gb} GB, serve almeno {int(estimated_size_gb * 1.5)} GB")
+        else:
+            # Nessuna directory ha spazio sufficiente
+            logger.error(f"Nessuna directory ha spazio sufficiente per il backup (~{estimated_size_gb} GB necessari)")
+            return {
+                "success": False,
+                "message": f"Spazio insufficiente per il backup. Servono almeno {int(estimated_size_gb * 1.5)} GB liberi",
+                "error": "No space available for backup"
+            }
+        
         # Crea backup
         # Prova prima con --mode snapshot, poi fallback a --mode suspend/stop
         # Nota: non possiamo usare --storage e --dumpdir insieme
@@ -387,7 +443,7 @@ class MigrationService:
         last_error = None
         for backup_mode in backup_modes:
             logger.info(f"Tentativo backup VM {vm_id} con mode={backup_mode}")
-            backup_cmd = f"vzdump {vm_id} --compress zstd --dumpdir /tmp --mode {backup_mode} --remove 0"
+            backup_cmd = f"vzdump {vm_id} --compress zstd --dumpdir {backup_dir} --mode {backup_mode} --remove 0"
             backup_result = await ssh_service.execute(
                 hostname=source_hostname,
                 command=backup_cmd,
@@ -441,7 +497,7 @@ class MigrationService:
         
         # Trova il file di backup creato
         # vzdump crea file tipo: vzdump-qemu-100-2025_12_08-12_30_00.vma.zst o .tar.zst
-        find_backup_cmd = f"ls -t /tmp/vzdump-{vm_type}-{vm_id}-*.vma.zst /tmp/vzdump-{vm_type}-{vm_id}-*.tar.zst 2>/dev/null | head -1"
+        find_backup_cmd = f"ls -t {backup_dir}/vzdump-{vm_type}-{vm_id}-*.vma.zst {backup_dir}/vzdump-{vm_type}-{vm_id}-*.tar.zst 2>/dev/null | head -1"
         find_result = await ssh_service.execute(
             hostname=source_hostname,
             command=find_backup_cmd,
@@ -459,7 +515,7 @@ class MigrationService:
             return {
                 "success": False,
                 "message": "File di backup non trovato",
-                "error": "Backup creato ma file non trovato in /tmp"
+                "error": f"Backup creato ma file non trovato in {backup_dir}"
             }
         
         backup_file = find_result.stdout.strip()
@@ -496,7 +552,7 @@ class MigrationService:
         
         # Usa rsync per avere progress e migliore gestione errori
         # --info=progress2 mostra progresso globale
-        rsync_cmd = f"rsync -avz --progress --info=progress2 -e 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {source_key} -p {dest_port}' {backup_file} {dest_user}@{dest_hostname}:/tmp/"
+        rsync_cmd = f"rsync -avz --progress --info=progress2 -e 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {source_key} -p {dest_port}' {backup_file} {dest_user}@{dest_hostname}:/var/tmp/"
         
         # Esegui rsync e monitora il progresso
         transfer_start = time.time()
@@ -518,7 +574,7 @@ class MigrationService:
         # Fallback a scp se rsync fallisce
         if not transfer_result.success:
             logger.warning(f"rsync fallito, provo con scp: {transfer_result.stderr}")
-            scp_cmd = f"scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {source_key} -P {dest_port} {backup_file} {dest_user}@{dest_hostname}:/tmp/"
+            scp_cmd = f"scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {source_key} -P {dest_port} {backup_file} {dest_user}@{dest_hostname}:/var/tmp/"
             transfer_result = await ssh_service.execute(
                 hostname=source_hostname,
                 command=scp_cmd,
@@ -547,7 +603,7 @@ class MigrationService:
                 "error": scp_result.stderr
             }
         
-        remote_backup = f"/tmp/{backup_file.split('/')[-1]}"
+        remote_backup = f"/var/tmp/{backup_file.split('/')[-1]}"
         
         # Restore sul nodo destinazione
         # Determina storage destinazione (deve supportare 'images')
