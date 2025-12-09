@@ -442,7 +442,13 @@ async def execute_recovery_job_task(job_id: int, triggered_by: Optional[int] = N
                     error=backup_result.get("error"),
                     details=f"Fase: Backup\n{backup_result.get('output', '')[:500]}",
                     job_id=job_id,
-                    is_scheduled=bool(job.schedule)
+                    is_scheduled=bool(job.schedule),
+                    notify_mode=job.notify_mode or "daily",
+                    job_type="recovery",
+                    source_node_name=source_node.name,
+                    dest_node_name=dest_node.name,
+                    vm_name=job.vm_name,
+                    vm_id=job.vm_id
                 )
             
             return
@@ -502,7 +508,13 @@ async def execute_recovery_job_task(job_id: int, triggered_by: Optional[int] = N
                     error=str(storage_error),
                     details="Storage PBS non configurato sul nodo destinazione",
                     job_id=job_id,
-                    is_scheduled=bool(job.schedule)
+                    is_scheduled=bool(job.schedule),
+                    notify_mode=job.notify_mode or "daily",
+                    job_type="recovery",
+                    source_node_name=source_node.name,
+                    dest_node_name=dest_node.name,
+                    vm_name=job.vm_name,
+                    vm_id=job.vm_id
                 )
             return
 
@@ -578,7 +590,13 @@ async def execute_recovery_job_task(job_id: int, triggered_by: Optional[int] = N
                     error=restore_result.get("error"),
                     details=f"Fase: Restore\nBackup ID: {backup_id}\n{restore_result.get('output', '')[:500]}",
                     job_id=job_id,
-                    is_scheduled=bool(job.schedule)
+                    is_scheduled=bool(job.schedule),
+                    notify_mode=job.notify_mode or "daily",
+                    job_type="recovery",
+                    source_node_name=source_node.name,
+                    dest_node_name=dest_node.name,
+                    vm_name=job.vm_name,
+                    vm_id=job.vm_id
                 )
             
             return
@@ -618,7 +636,13 @@ async def execute_recovery_job_task(job_id: int, triggered_by: Optional[int] = N
                 duration=total_duration,
                 details=f"Backup ID: {backup_id}\nBackup: {backup_duration}s\nRestore: {restore_duration}s",
                 job_id=job_id,
-                is_scheduled=bool(job.schedule)
+                is_scheduled=bool(job.schedule),
+                notify_mode=job.notify_mode or "daily",
+                job_type="recovery",
+                source_node_name=source_node.name,
+                dest_node_name=dest_node.name,
+                vm_name=job.vm_name,
+                vm_id=job.vm_id
             )
         
     except Exception as e:
@@ -642,15 +666,24 @@ async def execute_recovery_job_task(job_id: int, triggered_by: Optional[int] = N
                 # Notifica errore critico
                 if job.notify_on_each_run:
                     from services.notification_service import notification_service
+                    # Recupera nodi per informazioni
+                    source_node = db.query(Node).filter(Node.id == job.source_node_id).first()
+                    dest_node = db.query(Node).filter(Node.id == job.dest_node_id).first()
                     await notification_service.send_job_notification(
                         job_name=job.name,
                         status="failed",
-                        source=f"N/A",
-                        destination=f"N/A",
+                        source=f"{source_node.name if source_node else 'N/A'}:vm/{job.vm_id}",
+                        destination=f"{dest_node.name if dest_node else 'N/A'}:vm/{job.dest_vm_id or job.vm_id}",
                         duration=0,
                         error=f"Errore critico: {str(e)}",
                         job_id=job_id,
-                        is_scheduled=bool(job.schedule)
+                        is_scheduled=bool(job.schedule),
+                        notify_mode=job.notify_mode or "daily",
+                        job_type="recovery",
+                        source_node_name=source_node.name if source_node else None,
+                        dest_node_name=dest_node.name if dest_node else None,
+                        vm_name=job.vm_name,
+                        vm_id=job.vm_id
                     )
         except Exception as inner_e:
             logger.error(f"Errore durante cleanup: {inner_e}")

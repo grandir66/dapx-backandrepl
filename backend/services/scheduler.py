@@ -309,7 +309,10 @@ class SchedulerService:
                     details=f"Trasferito: {result.get('transferred', 'N/A')}" if result["success"] else None,
                     job_id=job_id,
                     is_scheduled=True,
-                    notify_mode=job.notify_mode or "daily"
+                    notify_mode=job.notify_mode or "daily",
+                    job_type="sync",
+                    source_node_name=source_node.name,
+                    dest_node_name=dest_node.name
                 )
             except Exception as notify_err:
                 logger.warning(f"Errore invio notifica per job {job_id}: {notify_err}")
@@ -437,7 +440,10 @@ class SchedulerService:
                     details=f"File: {result.get('backup_name', 'N/A')}, Size: {result.get('size_human', 'N/A')}",
                     job_id=job_id,
                     is_scheduled=True,
-                    notify_mode=job.notify_mode or "daily"
+                    notify_mode=job.notify_mode or "daily",
+                    job_type="host_backup",
+                    source_node_name=node.name,
+                    dest_node_name=None  # Host backup non ha un nodo destinazione
                 )
             except Exception as notify_err:
                 logger.warning(f"Errore invio notifica per HostBackupJob {job_id}: {notify_err}")

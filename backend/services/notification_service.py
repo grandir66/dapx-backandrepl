@@ -79,7 +79,12 @@ class NotificationService:
         is_scheduled: bool = False,
         notify_mode: str = "daily",  # daily, always, failure, never
         transferred: Optional[str] = None,  # Dati trasferiti (es: "10.5 GiB")
-        job_type: Optional[str] = None  # Tipo job (sync, backup, migration, recovery)
+        job_type: Optional[str] = None,  # Tipo job (sync, backup, migration, recovery)
+        source_node_name: Optional[str] = None,
+        dest_node_name: Optional[str] = None,
+        cluster_name: Optional[str] = None,
+        vm_name: Optional[str] = None,
+        vm_id: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Invia notifica per un job completato su tutti i canali abilitati.
@@ -128,8 +133,9 @@ class NotificationService:
         
         # Per notify_mode "daily": limita notifiche successo a 1 al giorno
         # Per notify_mode "always": notifica sempre
-        # I fallimenti vengono sempre notificati
-        if notify_mode == "daily" and is_scheduled and job_id and status == "success":
+        # I fallimenti vengono sempre notificati (anche con notify_mode="daily")
+        # La limitazione si applica sia per job schedulati che manuali
+        if notify_mode == "daily" and job_id and status == "success":
             today = datetime.utcnow().date()
             last_notification = self._daily_job_notifications.get(job_id)
             
@@ -142,6 +148,82 @@ class NotificationService:
             
             # Pulizia entries vecchie (più di 2 giorni)
             self._cleanup_old_notifications()
+        
+        # Se non forniti, prova a recuperare informazioni dal database usando job_id
+        if job_id and (not source_node_name or not dest_node_name or not vm_name):
+            db = SessionLocal()
+            try:
+                # Prova a recuperare informazioni dal job
+                if job_type == "sync":
+                    from database import SyncJob
+                    job = db.query(SyncJob).filter(SyncJob.id == job_id).first()
+                    if job:
+                        source_node = db.query(Node).filter(Node.id == job.source_node_id).first()
+                        dest_node = db.query(Node).filter(Node.id == job.dest_node_id).first()
+                        if source_node and not source_node_name:
+                            source_node_name = source_node.name
+                        if dest_node and not dest_node_name:
+                            dest_node_name = dest_node.name
+                elif job_type == "recovery":
+                    from database import RecoveryJob
+                    job = db.query(RecoveryJob).filter(RecoveryJob.id == job_id).first()
+                    if job:
+                        source_node = db.query(Node).filter(Node.id == job.source_node_id).first()
+                        dest_node = db.query(Node).filter(Node.id == job.dest_node_id).first()
+                        if source_node and not source_node_name:
+                            source_node_name = source_node.name
+                        if dest_node and not dest_node_name:
+                            dest_node_name = dest_node.name
+                        if job.vm_name and not vm_name:
+                            vm_name = job.vm_name
+                        if job.vm_id and not vm_id:
+                            vm_id = job.vm_id
+                elif job_type == "backup":
+                    from database import BackupJob
+                    job = db.query(BackupJob).filter(BackupJob.id == job_id).first()
+                    if job:
+                        source_node = db.query(Node).filter(Node.id == job.source_node_id).first()
+                        if source_node and not source_node_name:
+                            source_node_name = source_node.name
+                        if job.vm_name and not vm_name:
+                            vm_name = job.vm_name
+                        if job.vm_id and not vm_id:
+                            vm_id = job.vm_id
+                elif job_type == "migration":
+                    from database import MigrationJob
+                    job = db.query(MigrationJob).filter(MigrationJob.id == job_id).first()
+                    if job:
+                        source_node = db.query(Node).filter(Node.id == job.source_node_id).first()
+                        dest_node = db.query(Node).filter(Node.id == job.dest_node_id).first()
+                        if source_node and not source_node_name:
+                            source_node_name = source_node.name
+                        if dest_node and not dest_node_name:
+                            dest_node_name = dest_node.name
+                        if job.vm_name and not vm_name:
+                            vm_name = job.vm_name
+                        if job.vm_id and not vm_id:
+                            vm_id = job.vm_id
+            except Exception as e:
+                logger.warning(f"Errore recupero informazioni job dal database: {e}")
+            finally:
+                db.close()
+        
+        # Se cluster_name non fornito, usa un default o recupera da configurazione
+        if not cluster_name:
+            # Prova a recuperare da SystemConfig
+            db = SessionLocal()
+            try:
+                from database import SystemConfig
+                cluster_config = db.query(SystemConfig).filter(SystemConfig.key == "cluster_name").first()
+                if cluster_config:
+                    cluster_name = cluster_config.value
+                else:
+                    cluster_name = "DAPX Cluster"  # Default
+            except Exception as e:
+                logger.debug(f"Errore recupero cluster_name: {e}")
+                cluster_name = "DAPX Cluster"  # Default
+            finally:
+                db.close()
         
         results = {"sent": True, "channels": {}}
         
@@ -156,7 +238,13 @@ class NotificationService:
                     destination=destination,
                     duration=duration,
                     error=error,
-                    details=details
+                    details=details,
+                    cluster_name=cluster_name,
+                    source_node_name=source_node_name,
+                    dest_node_name=dest_node_name,
+                    job_type=job_type,
+                    vm_name=vm_name,
+                    vm_id=vm_id
                 )
                 results["channels"]["email"] = {"success": success, "message": message}
                 if success:

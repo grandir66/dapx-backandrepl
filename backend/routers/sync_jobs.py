@@ -31,7 +31,10 @@ async def send_job_notification_helper(
     error: str = None,
     details: str = None,
     is_scheduled: bool = False,
-    notify_mode: str = "daily"
+    notify_mode: str = "daily",
+    source_node_name: str = None,
+    dest_node_name: str = None,
+    job_type: str = "sync"
 ):
     """
     Invia notifica per un job di replica usando il notification_service centralizzato.
@@ -54,7 +57,10 @@ async def send_job_notification_helper(
         details=details[:1000] if details else None,
         job_id=job_id,
         is_scheduled=is_scheduled,
-        notify_mode=notify_mode
+        notify_mode=notify_mode,
+        job_type=job_type,
+        source_node_name=source_node_name,
+        dest_node_name=dest_node_name
     )
 
 
@@ -338,7 +344,10 @@ async def execute_sync_job_task(job_id: int, triggered_by_user_id: int = None):
                 error=result.get("error") if not result["success"] else None,
                 details=result.get("output"),
                 is_scheduled=False,
-                notify_mode=job.notify_mode or "daily"
+                notify_mode=job.notify_mode or "daily",
+                source_node_name=source_node.name,
+                dest_node_name=dest_node.name,
+                job_type="sync"
             )
         except Exception as notify_err:
             # Non bloccare se la notifica fallisce

@@ -132,7 +132,13 @@ class EmailService:
         destination: str,
         duration: Optional[int] = None,
         error: Optional[str] = None,
-        details: Optional[str] = None
+        details: Optional[str] = None,
+        cluster_name: Optional[str] = None,
+        source_node_name: Optional[str] = None,
+        dest_node_name: Optional[str] = None,
+        job_type: Optional[str] = None,  # sync, backup, recovery, migration
+        vm_name: Optional[str] = None,
+        vm_id: Optional[int] = None
     ) -> Tuple[bool, str]:
         """
         Invia notifica per un job di replica.
@@ -145,6 +151,12 @@ class EmailService:
             duration: Durata in secondi
             error: Messaggio di errore (se fallito)
             details: Dettagli aggiuntivi
+            cluster_name: Nome del cluster
+            source_node_name: Nome del nodo sorgente
+            dest_node_name: Nome del nodo destinazione
+            job_type: Tipo di job (sync, backup, recovery, migration)
+            vm_name: Nome della VM
+            vm_id: ID della VM
         """
         status_emoji = {
             "success": "✅",
@@ -158,7 +170,37 @@ class EmailService:
             "warning": "Attenzione"
         }.get(status, status)
         
-        subject = f"{status_emoji} Replica {status_text}: {job_name}"
+        # Determina il tipo di job e il modulo
+        job_type_labels = {
+            "sync": "📦 Sync (ZFS/BTRFS)",
+            "backup": "💾 Backup (PBS)",
+            "recovery": "🔄 Recovery (PBS)",
+            "migration": "🚀 Migration (Live)"
+        }
+        module_label = job_type_labels.get(job_type, "📋 Job") if job_type else "📋 Job"
+        
+        # Formatta informazioni VM
+        vm_info = ""
+        if vm_id:
+            if vm_name:
+                vm_info = f"<p><span class=\"label\">VM:</span> <strong>{vm_name}</strong> (ID: {vm_id})</p>"
+            else:
+                vm_info = f"<p><span class=\"label\">VM ID:</span> {vm_id}</p>"
+        
+        # Formatta durata
+        duration_str = ""
+        if duration:
+            hours = duration // 3600
+            minutes = (duration % 3600) // 60
+            seconds = duration % 60
+            if hours > 0:
+                duration_str = f"{hours}h {minutes}m {seconds}s"
+            elif minutes > 0:
+                duration_str = f"{minutes}m {seconds}s"
+            else:
+                duration_str = f"{seconds}s"
+        
+        subject = f"{status_emoji} {module_label} {status_text}: {job_name}"
         
         # Corpo email HTML
         body = f"""
@@ -170,27 +212,47 @@ class EmailService:
         .header {{ background: {'#28a745' if status == 'success' else '#dc3545' if status == 'failed' else '#ffc107'}; 
                    color: {'white' if status != 'warning' else 'black'}; padding: 15px; border-radius: 8px; }}
         .content {{ background: #f8f9fa; padding: 15px; border-radius: 8px; margin-top: 15px; }}
+        .info-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px; }}
+        .info-box {{ background: white; padding: 12px; border-radius: 6px; border-left: 4px solid #007bff; }}
         .label {{ font-weight: bold; color: #495057; }}
+        .value {{ color: #212529; margin-top: 4px; }}
         .error {{ background: #f8d7da; border: 1px solid #f5c6cb; padding: 10px; border-radius: 4px; margin-top: 10px; }}
         .footer {{ margin-top: 20px; color: #6c757d; font-size: 12px; }}
+        .module-badge {{ display: inline-block; background: #007bff; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-left: 8px; }}
     </style>
 </head>
 <body>
     <div class="header">
-        <h2>{status_emoji} Job Replica: {job_name}</h2>
+        <h2>{status_emoji} Job: {job_name} <span class="module-badge">{module_label}</span></h2>
         <p>Stato: <strong>{status_text}</strong></p>
     </div>
     
     <div class="content">
-        <p><span class="label">Sorgente:</span> {source}</p>
-        <p><span class="label">Destinazione:</span> {destination}</p>
-        <p><span class="label">Data:</span> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC</p>
-        {'<p><span class="label">Durata:</span> ' + str(duration) + ' secondi</p>' if duration else ''}
+        {'<p><span class="label">Cluster:</span> <strong>' + cluster_name + '</strong></p>' if cluster_name else ''}
+        {'<p><span class="label">Modulo:</span> <strong>' + module_label + '</strong></p>' if job_type else ''}
+        
+        <div class="info-grid">
+            <div class="info-box">
+                <div class="label">Server Sorgente</div>
+                <div class="value">{source_node_name or 'N/A'}</div>
+                <div class="value" style="font-size: 11px; color: #6c757d; margin-top: 4px;">{source}</div>
+            </div>
+            <div class="info-box">
+                <div class="label">Server Destinazione</div>
+                <div class="value">{dest_node_name or 'N/A'}</div>
+                <div class="value" style="font-size: 11px; color: #6c757d; margin-top: 4px;">{destination}</div>
+            </div>
+        </div>
+        
+        {vm_info}
+        
+        <p><span class="label">Data/Ora:</span> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC</p>
+        {'<p><span class="label">Durata:</span> <strong>' + duration_str + '</strong></p>' if duration_str else ''}
     </div>
     
-    {'<div class="error"><strong>Errore:</strong><br><pre>' + (error or '') + '</pre></div>' if error else ''}
+    {'<div class="error"><strong>Errore:</strong><br><pre style="white-space: pre-wrap; word-break: break-all;">' + (error or '') + '</pre></div>' if error else ''}
     
-    {'<div class="content"><strong>Dettagli:</strong><br>' + (details or '') + '</div>' if details else ''}
+    {'<div class="content"><strong>Dettagli:</strong><br><pre style="white-space: pre-wrap; word-break: break-all;">' + (details or '') + '</pre></div>' if details else ''}
     
     <div class="footer">
         <p>Questa email è stata generata automaticamente da DAPX-backandrepl.</p>

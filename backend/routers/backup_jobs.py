@@ -426,7 +426,18 @@ async def execute_backup_task(job_id: int, db_path: str):
                     job_type="backup",
                     job_name=job.name,
                     status=job.last_status,
-                    details=f"VM {job.vm_id} - Durata: {duration}s"
+                    source=f"{source_node.name}:vm/{job.vm_id}",
+                    destination=f"{pbs_node.name}:{job.pbs_storage_id}",
+                    duration=duration,
+                    error=error if job.last_status == "failed" else None,
+                    details=f"VM {job.vm_id} - Durata: {duration}s",
+                    job_id=job_id,
+                    is_scheduled=bool(job.schedule),
+                    notify_mode=job.notify_mode or "daily",
+                    source_node_name=source_node.name,
+                    dest_node_name=pbs_node.name,
+                    vm_name=job.vm_name,
+                    vm_id=job.vm_id
                 )
             except Exception as e:
                 logger.warning(f"Errore invio notifica: {e}")

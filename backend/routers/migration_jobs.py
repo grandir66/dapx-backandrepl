@@ -229,7 +229,12 @@ async def execute_migration_job_task(job_id: int, triggered_by: Optional[int] = 
                     details=f"Migrazione completata: {result['message']}",
                     job_id=job_id,
                     notify_mode=job.notify_mode,
-                    is_scheduled=bool(job.schedule)
+                    is_scheduled=bool(job.schedule),
+                    job_type="migration",
+                    source_node_name=source_node.name,
+                    dest_node_name=dest_node.name,
+                    vm_name=job.vm_name,
+                    vm_id=job.vm_id
                 )
             else:
                 job.last_status = "failed"
@@ -257,7 +262,12 @@ async def execute_migration_job_task(job_id: int, triggered_by: Optional[int] = 
                     details="Migrazione fallita",
                     job_id=job_id,
                     notify_mode=job.notify_mode,
-                    is_scheduled=bool(job.schedule)
+                    is_scheduled=bool(job.schedule),
+                    job_type="migration",
+                    source_node_name=source_node.name,
+                    dest_node_name=dest_node.name,
+                    vm_name=job.vm_name,
+                    vm_id=job.vm_id
                 )
             
             db.commit()
