@@ -137,7 +137,7 @@ def get_current_version() -> str:
 
 
 async def get_latest_release() -> Dict[str, Any]:
-    """Ottieni ultima release da GitHub"""
+    """Ottieni ultima release/tag da GitHub"""
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             # Prova prima le releases
@@ -151,6 +151,7 @@ async def get_latest_release() -> Dict[str, Any]:
                     data = response.json()
                     version = data.get("tag_name", "")
                     if version:
+                        logger.info(f"Trovata release GitHub: {version}")
                         return {
                             "version": version.lstrip("v"),
                             "changelog": data.get("body", ""),
@@ -161,7 +162,49 @@ async def get_latest_release() -> Dict[str, Any]:
             except Exception as e:
                 logger.warning(f"Errore recupero releases GitHub: {e}")
             
-            # Se non ci sono releases, usa i commit
+            # Se non ci sono releases, prova con i tags
+            try:
+                response = await client.get(
+                    f"{GITHUB_API}/tags",
+                    headers={"Accept": "application/vnd.github.v3+json"}
+                )
+                
+                if response.status_code == 200:
+                    tags = response.json()
+                    if tags and len(tags) > 0:
+                        # Prendi il primo tag (il più recente)
+                        latest_tag = tags[0]
+                        tag_name = latest_tag.get("name", "")
+                        if tag_name:
+                            logger.info(f"Trovato tag GitHub: {tag_name}")
+                            # Ottieni info sul commit del tag
+                            commit_url = latest_tag.get("commit", {}).get("url", "")
+                            commit_date = ""
+                            commit_message = ""
+                            if commit_url:
+                                try:
+                                    commit_response = await client.get(
+                                        commit_url,
+                                        headers={"Accept": "application/vnd.github.v3+json"}
+                                    )
+                                    if commit_response.status_code == 200:
+                                        commit_data = commit_response.json()
+                                        commit_date = commit_data.get("commit", {}).get("author", {}).get("date", "")
+                                        commit_message = commit_data.get("commit", {}).get("message", "")
+                                except Exception:
+                                    pass
+                            
+                            return {
+                                "version": tag_name.lstrip("v"),
+                                "changelog": commit_message or f"Tag {tag_name}",
+                                "date": commit_date,
+                                "url": f"https://github.com/{GITHUB_REPO}/releases/tag/{tag_name}",
+                                "prerelease": False
+                            }
+            except Exception as e:
+                logger.warning(f"Errore recupero tags GitHub: {e}")
+            
+            # Se non ci sono né releases né tags, usa i commit
             try:
                 response = await client.get(
                     f"{GITHUB_API}/commits/main",
@@ -172,6 +215,7 @@ async def get_latest_release() -> Dict[str, Any]:
                     data = response.json()
                     sha = data.get("sha", "")
                     if sha:
+                        logger.info(f"Usato commit come versione: {sha[:7]}")
                         return {
                             "version": sha[:7],
                             "changelog": data.get("commit", {}).get("message", ""),
