@@ -8,6 +8,7 @@ from typing import Optional, Dict, Tuple, List
 import logging
 import re
 import json
+import time
 
 from services.ssh_service import ssh_service, SSHResult
 
@@ -463,19 +464,71 @@ class MigrationService:
         
         backup_file = find_result.stdout.strip()
         
-        # Trasferisci backup sul nodo destinazione
-        # Usa scp via SSH (eseguito sul nodo sorgente)
-        scp_cmd = f"scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {source_key} -P {dest_port} {backup_file} {dest_user}@{dest_hostname}:/tmp/"
-        scp_result = await ssh_service.execute(
+        # Ottieni dimensione del backup
+        size_cmd = f"stat -c%s {backup_file} 2>/dev/null || stat -f%z {backup_file} 2>/dev/null"
+        size_result = await ssh_service.execute(
             hostname=source_hostname,
-            command=scp_cmd,
+            command=size_cmd,
             port=source_port,
             username=source_user,
             key_path=source_key,
-            timeout=3600
+            timeout=30
         )
         
-        if not scp_result.success:
+        backup_size_bytes = 0
+        backup_size_human = "N/A"
+        if size_result.success and size_result.stdout.strip().isdigit():
+            backup_size_bytes = int(size_result.stdout.strip())
+            # Converti in formato leggibile
+            if backup_size_bytes >= 1024**3:
+                backup_size_human = f"{backup_size_bytes / (1024**3):.2f} GB"
+            elif backup_size_bytes >= 1024**2:
+                backup_size_human = f"{backup_size_bytes / (1024**2):.2f} MB"
+            elif backup_size_bytes >= 1024:
+                backup_size_human = f"{backup_size_bytes / 1024:.2f} KB"
+            else:
+                backup_size_human = f"{backup_size_bytes} B"
+        
+        logger.info(f"Backup VM {vm_id} creato: {backup_file} ({backup_size_human})")
+        
+        # Trasferisci backup sul nodo destinazione usando rsync con progress
+        logger.info(f"Inizio trasferimento {backup_size_human} verso {dest_hostname}...")
+        
+        # Usa rsync per avere progress e migliore gestione errori
+        # --info=progress2 mostra progresso globale
+        rsync_cmd = f"rsync -avz --progress --info=progress2 -e 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {source_key} -p {dest_port}' {backup_file} {dest_user}@{dest_hostname}:/tmp/"
+        
+        # Esegui rsync e monitora il progresso
+        transfer_start = time.time()
+        transfer_result = await ssh_service.execute(
+            hostname=source_hostname,
+            command=rsync_cmd,
+            port=source_port,
+            username=source_user,
+            key_path=source_key,
+            timeout=7200  # 2 ore per file grandi
+        )
+        transfer_duration = time.time() - transfer_start
+        
+        # Calcola velocità trasferimento
+        if backup_size_bytes > 0 and transfer_duration > 0:
+            speed_mbps = (backup_size_bytes / (1024**2)) / transfer_duration
+            logger.info(f"Trasferimento completato: {backup_size_human} in {transfer_duration:.1f}s ({speed_mbps:.2f} MB/s)")
+        
+        # Fallback a scp se rsync fallisce
+        if not transfer_result.success:
+            logger.warning(f"rsync fallito, provo con scp: {transfer_result.stderr}")
+            scp_cmd = f"scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {source_key} -P {dest_port} {backup_file} {dest_user}@{dest_hostname}:/tmp/"
+            transfer_result = await ssh_service.execute(
+                hostname=source_hostname,
+                command=scp_cmd,
+                port=source_port,
+                username=source_user,
+                key_path=source_key,
+                timeout=7200
+            )
+        
+        if not transfer_result.success:
             # Cleanup backup locale
             await ssh_service.execute(
                 hostname=source_hostname,
@@ -485,9 +538,9 @@ class MigrationService:
                 key_path=source_key
             )
             logger.error(f"Trasferimento backup fallito per VM {vm_id}")
-            logger.error(f"Comando SCP fallito con exit code: {scp_result.exit_code}")
-            logger.error(f"Stderr: {scp_result.stderr}")
-            logger.error(f"Stdout: {scp_result.stdout}")
+            logger.error(f"Comando fallito con exit code: {transfer_result.exit_code}")
+            logger.error(f"Stderr: {transfer_result.stderr}")
+            logger.error(f"Stdout: {transfer_result.stdout}")
             return {
                 "success": False,
                 "message": f"Errore trasferimento backup: {scp_result.stderr}",
@@ -646,12 +699,16 @@ class MigrationService:
         
         duration = int(time.time() - start_time)
         
+        # Usa backup_size_human se transferred non è stato calcolato
+        final_transferred = backup_size_human if backup_size_human != "N/A" else transferred
+        
         return {
             "success": True,
-            "message": f"VM {vm_id} copiata con successo su {dest_hostname} (VMID: {target_vmid})",
+            "message": f"VM {vm_id} copiata con successo su {dest_hostname} (VMID: {target_vmid}) - Trasferiti: {final_transferred}",
             "vm_id": target_vmid,
             "duration": duration,
-            "transferred": transferred,
+            "transferred": final_transferred,
+            "backup_size": backup_size_human,
             "snapshot_created": snapshot_name if create_snapshot else None
         }
     
