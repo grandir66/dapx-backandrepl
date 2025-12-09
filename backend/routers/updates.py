@@ -139,45 +139,68 @@ def get_current_version() -> str:
 async def get_latest_release() -> Dict[str, Any]:
     """Ottieni ultima release da GitHub"""
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             # Prova prima le releases
-            response = await client.get(
-                f"{GITHUB_API}/releases/latest",
-                timeout=10.0,
-                headers={"Accept": "application/vnd.github.v3+json"}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                return {
-                    "version": data.get("tag_name", "").lstrip("v"),
-                    "changelog": data.get("body", ""),
-                    "date": data.get("published_at", ""),
-                    "url": data.get("html_url", ""),
-                    "prerelease": data.get("prerelease", False)
-                }
+            try:
+                response = await client.get(
+                    f"{GITHUB_API}/releases/latest",
+                    headers={"Accept": "application/vnd.github.v3+json"}
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    version = data.get("tag_name", "")
+                    if version:
+                        return {
+                            "version": version.lstrip("v"),
+                            "changelog": data.get("body", ""),
+                            "date": data.get("published_at", ""),
+                            "url": data.get("html_url", ""),
+                            "prerelease": data.get("prerelease", False)
+                        }
+            except Exception as e:
+                logger.warning(f"Errore recupero releases GitHub: {e}")
             
             # Se non ci sono releases, usa i commit
-            response = await client.get(
-                f"{GITHUB_API}/commits/main",
-                timeout=10.0,
-                headers={"Accept": "application/vnd.github.v3+json"}
-            )
+            try:
+                response = await client.get(
+                    f"{GITHUB_API}/commits/main",
+                    headers={"Accept": "application/vnd.github.v3+json"}
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    sha = data.get("sha", "")
+                    if sha:
+                        return {
+                            "version": sha[:7],
+                            "changelog": data.get("commit", {}).get("message", ""),
+                            "date": data.get("commit", {}).get("author", {}).get("date", ""),
+                            "url": data.get("html_url", ""),
+                            "prerelease": False
+                        }
+            except Exception as e:
+                logger.warning(f"Errore recupero commits GitHub: {e}")
             
-            if response.status_code == 200:
-                data = response.json()
-                return {
-                    "version": data.get("sha", "")[:7],
-                    "changelog": data.get("commit", {}).get("message", ""),
-                    "date": data.get("commit", {}).get("author", {}).get("date", ""),
-                    "url": data.get("html_url", ""),
-                    "prerelease": False
-                }
-            
-            return None
+            # Fallback: restituisci un dizionario vuoto invece di None
+            logger.warning("Impossibile recuperare informazioni da GitHub")
+            return {
+                "version": "",
+                "changelog": "",
+                "date": "",
+                "url": "",
+                "prerelease": False
+            }
     except Exception as e:
-        logger.error(f"Errore recupero release GitHub: {e}")
-        return None
+        logger.error(f"Errore connessione GitHub: {e}")
+        # Restituisci un dizionario vuoto invece di None per evitare errori
+        return {
+            "version": "",
+            "changelog": "",
+            "date": "",
+            "url": "",
+            "prerelease": False
+        }
 
 
 async def run_update_process():
