@@ -147,6 +147,18 @@ async def get_latest_release() -> Dict[str, Any]:
                     headers={"Accept": "application/vnd.github.v3+json"}
                 )
                 
+                # Controlla rate limit
+                if response.status_code == 403:
+                    logger.warning("GitHub API rate limit raggiunto")
+                    return {
+                        "version": "rate_limit",
+                        "changelog": "GitHub API rate limit raggiunto. Riprova tra qualche minuto.",
+                        "date": "",
+                        "url": "",
+                        "prerelease": False,
+                        "error": "rate_limit"
+                    }
+                
                 if response.status_code == 200:
                     data = response.json()
                     version = data.get("tag_name", "")
@@ -168,6 +180,18 @@ async def get_latest_release() -> Dict[str, Any]:
                     f"{GITHUB_API}/tags",
                     headers={"Accept": "application/vnd.github.v3+json"}
                 )
+                
+                # Controlla rate limit
+                if response.status_code == 403:
+                    logger.warning("GitHub API rate limit raggiunto")
+                    return {
+                        "version": "rate_limit",
+                        "changelog": "GitHub API rate limit raggiunto. Riprova tra qualche minuto.",
+                        "date": "",
+                        "url": "",
+                        "prerelease": False,
+                        "error": "rate_limit"
+                    }
                 
                 if response.status_code == 200:
                     tags = response.json()
@@ -210,6 +234,18 @@ async def get_latest_release() -> Dict[str, Any]:
                     f"{GITHUB_API}/commits/main",
                     headers={"Accept": "application/vnd.github.v3+json"}
                 )
+                
+                # Controlla rate limit
+                if response.status_code == 403:
+                    logger.warning("GitHub API rate limit raggiunto")
+                    return {
+                        "version": "rate_limit",
+                        "changelog": "GitHub API rate limit raggiunto. Riprova tra qualche minuto.",
+                        "date": "",
+                        "url": "",
+                        "prerelease": False,
+                        "error": "rate_limit"
+                    }
                 
                 if response.status_code == 200:
                     data = response.json()
