@@ -643,3 +643,86 @@ async def refresh_version(user: User = Depends(require_admin)):
         logger.error(f"Errore refresh versione: {e}")
         raise HTTPException(status_code=500, detail=f"Errore refresh versione: {str(e)}")
 
+
+@router.get("/debug-github")
+async def debug_github(user: User = Depends(require_admin)):
+    """Debug: testa connessione a GitHub e recupero versione"""
+    results = {
+        "current_version": get_current_version(),
+        "github_api": GITHUB_API,
+        "tests": {}
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # Test releases
+            try:
+                response = await client.get(
+                    f"{GITHUB_API}/releases/latest",
+                    headers={"Accept": "application/vnd.github.v3+json"}
+                )
+                results["tests"]["releases"] = {
+                    "status_code": response.status_code,
+                    "success": response.status_code == 200,
+                    "data": response.json() if response.status_code == 200 else response.text[:200]
+                }
+            except Exception as e:
+                results["tests"]["releases"] = {"error": str(e)}
+            
+            # Test tags
+            try:
+                response = await client.get(
+                    f"{GITHUB_API}/tags",
+                    headers={"Accept": "application/vnd.github.v3+json"}
+                )
+                if response.status_code == 200:
+                    tags = response.json()
+                    results["tests"]["tags"] = {
+                        "status_code": response.status_code,
+                        "success": True,
+                        "count": len(tags),
+                        "first_tag": tags[0] if tags else None
+                    }
+                else:
+                    results["tests"]["tags"] = {
+                        "status_code": response.status_code,
+                        "success": False,
+                        "data": response.text[:200]
+                    }
+            except Exception as e:
+                results["tests"]["tags"] = {"error": str(e)}
+            
+            # Test commits
+            try:
+                response = await client.get(
+                    f"{GITHUB_API}/commits/main",
+                    headers={"Accept": "application/vnd.github.v3+json"}
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    results["tests"]["commits"] = {
+                        "status_code": response.status_code,
+                        "success": True,
+                        "sha": data.get("sha", "")[:7],
+                        "message": data.get("commit", {}).get("message", "")[:100]
+                    }
+                else:
+                    results["tests"]["commits"] = {
+                        "status_code": response.status_code,
+                        "success": False
+                    }
+            except Exception as e:
+                results["tests"]["commits"] = {"error": str(e)}
+                
+    except Exception as e:
+        results["httpx_error"] = str(e)
+    
+    # Test get_latest_release
+    try:
+        latest = await get_latest_release()
+        results["get_latest_release_result"] = latest
+    except Exception as e:
+        results["get_latest_release_error"] = str(e)
+    
+    return results
+
