@@ -77,6 +77,7 @@ class MigrationService:
         )
         
         if not check_result.success:
+            logger.error(f"VM {vm_id} non trovata su {source_hostname}: {check_result.stderr}")
             return {
                 "success": False,
                 "message": f"VM {vm_id} non trovata su {source_hostname}",
@@ -169,11 +170,21 @@ class MigrationService:
         )
         
         if not migrate_result.success:
+            full_output = migrate_result.stdout + "\n" + migrate_result.stderr
+            logger.error(f"Migrazione VM {vm_id} fallita")
+            logger.error(f"Exit code: {migrate_result.exit_code}")
+            logger.error(f"Output:\n{full_output}")
+            
+            # Estrai errori specifici
+            error_lines = [line for line in full_output.split('\n') if 'ERROR' in line or 'error' in line.lower()]
+            specific_error = '\n'.join(error_lines) if error_lines else migrate_result.stderr
+            
             return {
                 "success": False,
-                "message": f"Errore durante migrazione VM: {migrate_result.stderr}",
-                "error": migrate_result.stderr,
-                "stdout": migrate_result.stdout
+                "message": f"Errore durante migrazione VM: {specific_error}",
+                "error": specific_error,
+                "stdout": migrate_result.stdout,
+                "full_output": full_output
             }
         
         # Estrai dimensione trasferita dall'output
@@ -323,6 +334,9 @@ class MigrationService:
             )
             
             if not destroy_result.success:
+                logger.error(f"Impossibile eliminare VM esistente {target_vmid} su {dest_hostname}")
+                logger.error(f"Exit code: {destroy_result.exit_code}")
+                logger.error(f"Stderr: {destroy_result.stderr}")
                 return {
                     "success": False,
                     "message": f"Impossibile eliminare VM esistente {target_vmid}: {destroy_result.stderr}",
@@ -374,14 +388,26 @@ class MigrationService:
                 logger.warning(f"Mode {backup_mode} non supportato, provo alternativa...")
                 continue
             else:
-                # Errore diverso, ritorna subito
+                # Log dettagliato dell'errore
+                full_output = backup_result.stdout + "\n" + backup_result.stderr
+                logger.error(f"Backup VM {vm_id} fallito (mode={backup_mode})")
+                logger.error(f"Comando: {backup_cmd}")
+                logger.error(f"Exit code: {backup_result.exit_code}")
+                logger.error(f"Output completo:\n{full_output}")
+                
+                # Estrai errori specifici dall'output
+                error_lines = [line for line in full_output.split('\n') if 'ERROR' in line or 'error' in line.lower()]
+                specific_error = '\n'.join(error_lines) if error_lines else backup_result.stderr
+                
                 return {
                     "success": False,
-                    "message": f"Errore creazione backup (mode={backup_mode}): {backup_result.stderr}",
-                    "error": backup_result.stderr
+                    "message": f"Errore creazione backup (mode={backup_mode}): {specific_error}",
+                    "error": specific_error,
+                    "full_output": full_output
                 }
         
         if not backup_result or not backup_result.success:
+            logger.error(f"Backup VM {vm_id} fallito con tutti i mode (snapshot, suspend, stop)")
             return {
                 "success": False,
                 "message": f"Errore creazione backup: nessun mode supportato",
@@ -401,10 +427,14 @@ class MigrationService:
         )
         
         if not find_result.success or not find_result.stdout.strip():
+            logger.error(f"File di backup non trovato per VM {vm_id}")
+            logger.error(f"Comando ricerca: {find_backup_cmd}")
+            logger.error(f"Stdout: {find_result.stdout}")
+            logger.error(f"Stderr: {find_result.stderr}")
             return {
                 "success": False,
                 "message": "File di backup non trovato",
-                "error": "Backup creato ma file non trovato"
+                "error": "Backup creato ma file non trovato in /tmp"
             }
         
         backup_file = find_result.stdout.strip()
@@ -430,6 +460,10 @@ class MigrationService:
                 username=source_user,
                 key_path=source_key
             )
+            logger.error(f"Trasferimento backup fallito per VM {vm_id}")
+            logger.error(f"Comando SCP fallito con exit code: {scp_result.exit_code}")
+            logger.error(f"Stderr: {scp_result.stderr}")
+            logger.error(f"Stdout: {scp_result.stdout}")
             return {
                 "success": False,
                 "message": f"Errore trasferimento backup: {scp_result.stderr}",
@@ -521,10 +555,21 @@ class MigrationService:
         )
         
         if not restore_result.success:
+            full_output = restore_result.stdout + "\n" + restore_result.stderr
+            logger.error(f"Restore VM {vm_id} fallito su {dest_hostname}")
+            logger.error(f"Comando: {restore_cmd}")
+            logger.error(f"Exit code: {restore_result.exit_code}")
+            logger.error(f"Output:\n{full_output}")
+            
+            # Estrai errori specifici
+            error_lines = [line for line in full_output.split('\n') if 'ERROR' in line or 'error' in line.lower()]
+            specific_error = '\n'.join(error_lines) if error_lines else restore_result.stderr
+            
             return {
                 "success": False,
-                "message": f"Errore restore: {restore_result.stderr}",
-                "error": restore_result.stderr
+                "message": f"Errore restore: {specific_error}",
+                "error": specific_error,
+                "full_output": full_output
             }
         
         # Estrai dimensione trasferita
