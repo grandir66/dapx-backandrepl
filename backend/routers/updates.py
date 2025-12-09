@@ -63,36 +63,41 @@ class UpdateStartResponse(BaseModel):
 def get_current_version() -> str:
     """Ottieni versione corrente installata"""
     try:
-        # Prova file VERSION (priorità massima)
-        version_file = VERSION_FILE
-        # Prova anche nella root del progetto se INSTALL_DIR non contiene VERSION
-        if not os.path.exists(version_file):
-            # Prova percorsi alternativi
-            alt_paths = [
-                os.path.join(INSTALL_DIR, "VERSION"),
-                "/opt/dapx-backandrepl/VERSION",
-                os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "VERSION"),
-                os.path.join(os.getcwd(), "VERSION")
-            ]
-            for alt_path in alt_paths:
-                if os.path.exists(alt_path):
-                    version_file = alt_path
-                    break
+        # Lista di percorsi da provare in ordine di priorità
+        version_paths = [
+            # Percorsi standard
+            VERSION_FILE,
+            os.path.join(INSTALL_DIR, "VERSION"),
+            "/opt/dapx-backandrepl/VERSION",
+            "/opt/sanoid-manager/VERSION",
+            # Percorsi relativi al backend (per sviluppo)
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "VERSION"),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "VERSION"),
+            os.path.join(os.getcwd(), "VERSION"),
+            # Percorsi alternativi
+            os.path.join(INSTALL_DIR, "version.txt"),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "version.txt"),
+        ]
         
-        if os.path.exists(version_file):
-            try:
-                with open(version_file, 'r') as f:
-                    version = f.read().strip()
-                    if version:
-                        logger.debug(f"Versione letta da {version_file}: {version}")
-                        return version
-            except Exception as e:
-                logger.warning(f"Errore lettura file VERSION {version_file}: {e}")
+        # Cerca file VERSION o version.txt
+        for version_file in version_paths:
+            if os.path.exists(version_file):
+                try:
+                    with open(version_file, 'r') as f:
+                        version = f.read().strip()
+                        # Rimuovi spazi e newline
+                        version = version.split('\n')[0].strip()
+                        if version and version != "":
+                            logger.debug(f"Versione letta da {version_file}: {version}")
+                            return version
+                except Exception as e:
+                    logger.warning(f"Errore lettura file versione {version_file}: {e}")
+                    continue
         
-        # Fallback: Prova git describe
+        # Fallback: Prova git describe (restituisce tag se disponibile, altrimenti commit)
         if os.path.exists(os.path.join(INSTALL_DIR, ".git")):
             result = subprocess.run(
-                ["git", "describe", "--tags", "--always"],
+                ["git", "describe", "--tags", "--always", "--dirty"],
                 cwd=INSTALL_DIR,
                 capture_output=True,
                 text=True,
@@ -100,10 +105,14 @@ def get_current_version() -> str:
             )
             if result.returncode == 0 and result.stdout.strip():
                 version = result.stdout.strip()
+                # Rimuovi prefisso 'v' se presente
+                if version.startswith('v'):
+                    version = version[1:]
                 logger.debug(f"Versione da git describe: {version}")
                 return version
         
-        # Fallback: Prova git rev-parse
+        # Ultimo fallback: Prova git rev-parse (solo se git describe fallisce)
+        # Questo restituisce un hash, quindi è meglio evitarlo se possibile
         if os.path.exists(os.path.join(INSTALL_DIR, ".git")):
             result = subprocess.run(
                 ["git", "rev-parse", "--short", "HEAD"],
@@ -114,7 +123,7 @@ def get_current_version() -> str:
             )
             if result.returncode == 0 and result.stdout.strip():
                 version = result.stdout.strip()
-                logger.debug(f"Versione da git rev-parse: {version}")
+                logger.warning(f"Usato hash commit come versione (file VERSION non trovato): {version}")
                 return version
         
         logger.warning("Impossibile determinare versione, uso 'unknown'")
