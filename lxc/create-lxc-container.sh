@@ -29,11 +29,34 @@ log_error() {
     echo -e "${RED}[✗]${NC} $1"
 }
 
-# ============== CONFIGURAZIONE ==============
+# Parametri container
 CTID="${1:-100}"
 CT_NAME="${2:-dapx-backandrepl}"
 STORAGE="${3:-local-lvm}"
 ROOTFS_SIZE="${4:-8G}"
+
+# Verifica e rileva storage
+if ! pvesm status | grep -q "^${STORAGE} "; then
+    log_warning "Storage '${STORAGE}' non trovato o non attivo."
+    
+    # Cerca uno storage valido per rootdir (container)
+    # Cerca storage che supportano 'rootdir' (container disk)
+    VALID_STORAGE=$(pvesm status -content rootdir | grep "active" | awk '{print $1}' | head -1)
+    
+    if [ -n "${VALID_STORAGE}" ]; then
+        log_info "Trovato storage alternativo disponibile: ${VALID_STORAGE}"
+        STORAGE="${VALID_STORAGE}"
+    else
+        log_error "Nessuno storage valido per container trovato."
+        log_info "Storage disponibili:"
+        pvesm status
+        exit 1
+    fi
+fi
+
+log_info "Utilizzo storage: ${STORAGE}"
+
+# Altri parametri
 MEMORY="${5:-1024}"
 CORES="${6:-2}"
 NETWORK_BRIDGE="${7:-vmbr0}"
@@ -91,8 +114,15 @@ if [ -z "${TEMPLATE}" ]; then
         log_success "Template trovato: ${TEMPLATE}"
     else
         log_error "Nessun template Debian/Ubuntu trovato."
+        
+        # Trova storage per template
+        TEMPLATE_STORAGE=$(pvesm status -content vztmpl | grep "active" | awk '{print $1}' | head -1)
+        if [ -z "${TEMPLATE_STORAGE}" ]; then
+            TEMPLATE_STORAGE="local" # Fallback
+        fi
+        
         log_info "Scarica un template con:"
-        echo "  pveam download local debian-12-standard"
+        echo "  pveam download ${TEMPLATE_STORAGE} debian-12-standard"
         echo ""
         log_info "Template disponibili:"
         pveam available --section system 2>/dev/null | grep -iE "debian|ubuntu" | head -5

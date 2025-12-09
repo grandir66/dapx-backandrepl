@@ -80,3 +80,4 @@ echo "3. Verifica template scaricati:"
 echo "   ls -lh /var/lib/vz/template/cache/"
 echo ""
 
+

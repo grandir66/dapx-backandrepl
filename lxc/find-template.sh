@@ -117,3 +117,4 @@ if [ ${DOWNLOADED} -eq 0 ]; then
     log_info "Nota: Il nome del template deve essere esatto come mostrato da 'pveam available'"
 fi
 
+

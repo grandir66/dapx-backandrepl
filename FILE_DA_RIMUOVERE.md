@@ -97,3 +97,4 @@ git commit -m "Add .gitignore and remove unnecessary files"
 - **Verificare** che gli script siano ancora necessari prima di rimuoverli
 - **Consolidare** documentazione obsoleta nel nuovo `MANUAL.md`
 
+
