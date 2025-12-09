@@ -245,14 +245,41 @@ async def run_update_process():
             
             log("Codice aggiornato da Git")
             
-            # Verifica che il file VERSION sia stato aggiornato
-            if os.path.exists(VERSION_FILE):
-                try:
-                    with open(VERSION_FILE, 'r') as f:
-                        new_version = f.read().strip()
-                    log(f"Versione aggiornata: {new_version}")
-                except Exception as e:
-                    log(f"Warning: impossibile leggere VERSION dopo aggiornamento: {e}")
+            # Forza refresh filesystem e verifica file VERSION
+            import time
+            time.sleep(0.5)  # Piccola pausa per assicurare scrittura su disco
+            
+            # Cerca file VERSION in tutti i percorsi possibili
+            version_paths_to_check = [
+                os.path.join(INSTALL_DIR, "VERSION"),
+                "/opt/dapx-backandrepl/VERSION",
+                "/opt/sanoid-manager/VERSION",
+            ]
+            
+            version_found = None
+            for vpath in version_paths_to_check:
+                if os.path.exists(vpath):
+                    try:
+                        with open(vpath, 'r') as f:
+                            version_content = f.read().strip().split('\n')[0].strip()
+                        if version_content:
+                            version_found = version_content
+                            log(f"Versione letta da {vpath}: {version_content}")
+                            break
+                    except Exception as e:
+                        log(f"Warning: errore lettura {vpath}: {e}")
+                        continue
+            
+            if version_found:
+                log(f"✓ Versione aggiornata: {version_found}")
+            else:
+                log("Warning: file VERSION non trovato dopo aggiornamento")
+                # Prova a verificare se esiste il file
+                for vpath in version_paths_to_check:
+                    if os.path.exists(vpath):
+                        log(f"File VERSION esiste in {vpath} ma non è leggibile")
+                    else:
+                        log(f"File VERSION non esiste in {vpath}")
         else:
             # Non è un repository Git
             log("Download nuova versione...")
@@ -373,18 +400,44 @@ async def run_update_process():
         # Aggiorna versione (forza rilettura dopo aggiornamento)
         log("Lettura versione aggiornata...")
         old_version = update_status.get("current_version", "unknown")
+        
+        # Forza refresh chiamando get_current_version() più volte se necessario
+        import time
+        time.sleep(0.5)  # Piccola pausa per assicurare scrittura su disco
+        
         new_version = get_current_version()
         
+        # Se la versione è ancora "unknown" o un hash, prova a rileggere
+        if new_version == "unknown" or (len(new_version) == 7 and new_version.isalnum()):
+            log("Warning: versione non letta correttamente, riprovo...")
+            time.sleep(0.5)
+            new_version = get_current_version()
+        
         # Verifica che il file VERSION sia stato aggiornato
-        if os.path.exists(VERSION_FILE):
-            try:
-                with open(VERSION_FILE, 'r') as f:
-                    file_version = f.read().strip()
-                log(f"Versione nel file VERSION: {file_version}")
-                if file_version and file_version != new_version:
-                    log(f"Warning: versione file ({file_version}) diversa da quella letta ({new_version})")
-            except Exception as e:
-                log(f"Warning: impossibile leggere file VERSION: {e}")
+        version_paths_to_check = [
+            os.path.join(INSTALL_DIR, "VERSION"),
+            "/opt/dapx-backandrepl/VERSION",
+            "/opt/sanoid-manager/VERSION",
+        ]
+        
+        file_version = None
+        for vpath in version_paths_to_check:
+            if os.path.exists(vpath):
+                try:
+                    with open(vpath, 'r') as f:
+                        file_version = f.read().strip().split('\n')[0].strip()
+                    if file_version:
+                        log(f"Versione nel file VERSION ({vpath}): {file_version}")
+                        break
+                except Exception as e:
+                    log(f"Warning: impossibile leggere file VERSION da {vpath}: {e}")
+        
+        if file_version and file_version != new_version:
+            log(f"Warning: versione file ({file_version}) diversa da quella letta ({new_version})")
+            # Usa la versione del file se disponibile
+            if file_version and file_version != "unknown":
+                new_version = file_version
+                log(f"Usata versione dal file: {new_version}")
         
         update_status["current_version"] = new_version
         update_status["last_update"] = datetime.now().isoformat()
