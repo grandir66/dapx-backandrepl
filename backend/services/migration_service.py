@@ -368,6 +368,22 @@ class MigrationService:
         backup_result = None
         used_mode = None
         
+        # Errori non critici che permettono di provare con un altro mode
+        # Questi errori sono tipicamente legati all'avvio della VM (mode snapshot/suspend)
+        # ma non impediscono il backup con mode stop
+        recoverable_errors = [
+            "bridge",
+            "does not exist", 
+            "not running",
+            "snapshot feature is not available",
+            "unable to activate",
+            "network",
+            "vmbr",
+            "failed to start",
+            "cannot start"
+        ]
+        
+        last_error = None
         for backup_mode in backup_modes:
             logger.info(f"Tentativo backup VM {vm_id} con mode={backup_mode}")
             backup_cmd = f"vzdump {vm_id} --compress zstd --dumpdir /tmp --mode {backup_mode} --remove 0"
@@ -384,13 +400,20 @@ class MigrationService:
                 used_mode = backup_mode
                 logger.info(f"Backup VM {vm_id} completato con mode={backup_mode}")
                 break
-            elif "snapshot feature is not available" in backup_result.stderr:
-                logger.warning(f"Mode {backup_mode} non supportato, provo alternativa...")
+            
+            # Controlla se l'errore è recuperabile (prova prossimo mode)
+            full_output = (backup_result.stdout + "\n" + backup_result.stderr).lower()
+            is_recoverable = any(err in full_output for err in recoverable_errors)
+            
+            if is_recoverable:
+                logger.warning(f"Mode {backup_mode} fallito per errore recuperabile, provo alternativa...")
+                logger.warning(f"Errore: {backup_result.stderr[:200]}")
+                last_error = backup_result.stderr
                 continue
             else:
-                # Log dettagliato dell'errore
+                # Errore non recuperabile, fallisci subito
                 full_output = backup_result.stdout + "\n" + backup_result.stderr
-                logger.error(f"Backup VM {vm_id} fallito (mode={backup_mode})")
+                logger.error(f"Backup VM {vm_id} fallito (mode={backup_mode}) - errore non recuperabile")
                 logger.error(f"Comando: {backup_cmd}")
                 logger.error(f"Exit code: {backup_result.exit_code}")
                 logger.error(f"Output completo:\n{full_output}")
@@ -408,10 +431,11 @@ class MigrationService:
         
         if not backup_result or not backup_result.success:
             logger.error(f"Backup VM {vm_id} fallito con tutti i mode (snapshot, suspend, stop)")
+            logger.error(f"Ultimo errore: {last_error}")
             return {
                 "success": False,
-                "message": f"Errore creazione backup: nessun mode supportato",
-                "error": "Tutti i mode di backup falliti (snapshot, suspend, stop)"
+                "message": f"Errore creazione backup: tutti i mode falliti. Ultimo errore: {last_error}",
+                "error": last_error or "Tutti i mode di backup falliti (snapshot, suspend, stop)"
             }
         
         # Trova il file di backup creato
