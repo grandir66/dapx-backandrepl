@@ -682,3 +682,4 @@ Vedi [CHANGELOG.md](CHANGELOG.md) per la lista completa delle modifiche.
 **© 2025 Domarc S.r.l. - Tutti i diritti riservati**
 
 
+

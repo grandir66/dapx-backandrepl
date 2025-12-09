@@ -98,3 +98,4 @@ git commit -m "Add .gitignore and remove unnecessary files"
 - **Consolidare** documentazione obsoleta nel nuovo `MANUAL.md`
 
 
+
