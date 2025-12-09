@@ -70,12 +70,15 @@ def get_current_version() -> str:
             os.path.join(INSTALL_DIR, "VERSION"),
             "/opt/dapx-backandrepl/VERSION",
             "/opt/sanoid-manager/VERSION",
+            # Percorsi Docker (container)
+            "/app/VERSION",
+            os.path.join(os.getcwd(), "VERSION"),
             # Percorsi relativi al backend (per sviluppo)
             os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "VERSION"),
             os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "VERSION"),
-            os.path.join(os.getcwd(), "VERSION"),
             # Percorsi alternativi
             os.path.join(INSTALL_DIR, "version.txt"),
+            "/app/version.txt",
             os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "version.txt"),
         ]
         

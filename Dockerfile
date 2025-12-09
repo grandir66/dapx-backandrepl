@@ -24,7 +24,7 @@ FROM python:3.11-slim
 # Metadati
 LABEL maintainer="Domarc S.r.l. <info@domarc.it>"
 LABEL description="DAPX-backandrepl - Sistema centralizzato di backup e replica per Proxmox VE"
-LABEL version="3.4.5"
+LABEL version="3.5.3"
 
 # Variabili d'ambiente
 ENV PYTHONUNBUFFERED=1 \
@@ -54,6 +54,8 @@ COPY --from=builder /root/.local /home/dapx/.local
 # Copia codice applicazione
 COPY backend/ ./backend/
 COPY frontend/dist/ ./frontend/dist/
+# Copia file VERSION per la versione
+COPY VERSION ./VERSION
 
 # Imposta PATH per Python packages e PYTHONPATH
 ENV PATH=/home/dapx/.local/bin:$PATH \
