@@ -348,22 +348,44 @@ class MigrationService:
                 logger.warning(f"Errore creazione snapshot: {snap_result.stderr}")
         
         # Crea backup
+        # Prova prima con --mode snapshot, poi fallback a --mode suspend/stop
         # Nota: non possiamo usare --storage e --dumpdir insieme
-        backup_cmd = f"vzdump {vm_id} --compress zstd --dumpdir /tmp --mode snapshot --remove 0"
-        backup_result = await ssh_service.execute(
-            hostname=source_hostname,
-            command=backup_cmd,
-            port=source_port,
-            username=source_user,
-            key_path=source_key,
-            timeout=3600
-        )
+        backup_modes = ["snapshot", "suspend", "stop"]
+        backup_result = None
+        used_mode = None
         
-        if not backup_result.success:
+        for backup_mode in backup_modes:
+            logger.info(f"Tentativo backup VM {vm_id} con mode={backup_mode}")
+            backup_cmd = f"vzdump {vm_id} --compress zstd --dumpdir /tmp --mode {backup_mode} --remove 0"
+            backup_result = await ssh_service.execute(
+                hostname=source_hostname,
+                command=backup_cmd,
+                port=source_port,
+                username=source_user,
+                key_path=source_key,
+                timeout=3600
+            )
+            
+            if backup_result.success:
+                used_mode = backup_mode
+                logger.info(f"Backup VM {vm_id} completato con mode={backup_mode}")
+                break
+            elif "snapshot feature is not available" in backup_result.stderr:
+                logger.warning(f"Mode {backup_mode} non supportato, provo alternativa...")
+                continue
+            else:
+                # Errore diverso, ritorna subito
+                return {
+                    "success": False,
+                    "message": f"Errore creazione backup (mode={backup_mode}): {backup_result.stderr}",
+                    "error": backup_result.stderr
+                }
+        
+        if not backup_result or not backup_result.success:
             return {
                 "success": False,
-                "message": f"Errore creazione backup: {backup_result.stderr}",
-                "error": backup_result.stderr
+                "message": f"Errore creazione backup: nessun mode supportato",
+                "error": "Tutti i mode di backup falliti (snapshot, suspend, stop)"
             }
         
         # Trova il file di backup creato
@@ -694,18 +716,31 @@ class MigrationService:
                 # Determina il nuovo bridge
                 new_bridge = None
                 if isinstance(net_config, str):
-                    bridge_match = re.search(r'bridge=([^,\s]+)', net_config)
+                    # Rimuovi eventuali prefissi "bridge=" multipli
+                    clean_config = net_config
+                    while clean_config.startswith("bridge="):
+                        clean_config = clean_config[7:]  # Rimuovi "bridge="
+                    
+                    # Cerca bridge= nel valore pulito o usa il valore direttamente
+                    bridge_match = re.search(r'bridge=([^,\s]+)', clean_config)
                     if bridge_match:
                         new_bridge = bridge_match.group(1)
                     else:
                         # Assume sia solo il nome del bridge
-                        new_bridge = net_config
+                        new_bridge = clean_config.strip()
                 elif isinstance(net_config, dict) and "bridge" in net_config:
                     new_bridge = net_config["bridge"]
+                    # Rimuovi eventuali prefissi "bridge=" dal valore dict
+                    while new_bridge.startswith("bridge="):
+                        new_bridge = new_bridge[7:]
                 
                 if not new_bridge:
                     logger.warning(f"Bridge non specificato per {net_iface}")
                     continue
+                
+                # Assicurati che new_bridge sia solo il nome del bridge (senza prefissi)
+                new_bridge = new_bridge.strip()
+                logger.debug(f"Bridge pulito per {net_iface}: {new_bridge}")
                 
                 # Sostituisci il bridge nella config esistente
                 new_config = re.sub(r'bridge=[^,\s]+', f'bridge={new_bridge}', current_config)
