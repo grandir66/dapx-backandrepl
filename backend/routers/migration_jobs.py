@@ -145,23 +145,42 @@ async def execute_migration_job_task(job_id: int, triggered_by: Optional[int] = 
     try:
         job = db.query(MigrationJob).filter(MigrationJob.id == job_id).first()
         if not job:
-            logger.error(f"Migration job {job_id} non trovato")
-            return {"success": False, "message": f"Job {job_id} non trovato"}
+            logger.error(f"[MIGRATION JOB] Job {job_id} non trovato nel database")
+            return {"success": False, "message": f"Job {job_id} non trovato nel database"}
         
         source_node = db.query(Node).filter(Node.id == job.source_node_id).first()
         dest_node = db.query(Node).filter(Node.id == job.dest_node_id).first()
         
         if not source_node or not dest_node:
-            logger.error(f"Nodi non trovati per job {job_id}")
-            return {"success": False, "message": "Nodi non trovati"}
+            missing = []
+            if not source_node:
+                missing.append(f"source_node_id={job.source_node_id}")
+            if not dest_node:
+                missing.append(f"dest_node_id={job.dest_node_id}")
+            logger.error(f"[MIGRATION JOB] Nodi non trovati per job {job_id}: {', '.join(missing)}")
+            logger.error(f"[MIGRATION JOB] Job: {job.name}, VM: {job.vm_id}")
+            return {"success": False, "message": f"Nodi non trovati: {', '.join(missing)}"}
         
-        # Crea log entry
+        # Log dettagliato inizio job
+        logger.info(f"[MIGRATION JOB] ========== INIZIO JOB {job_id} ==========")
+        logger.info(f"[MIGRATION JOB] Nome: {job.name}")
+        logger.info(f"[MIGRATION JOB] VM: {job.vm_id} ({job.vm_type}) - {job.vm_name or 'nome non disponibile'}")
+        logger.info(f"[MIGRATION JOB] Sorgente: {source_node.name} ({source_node.hostname}:{source_node.ssh_port})")
+        logger.info(f"[MIGRATION JOB] Destinazione: {dest_node.name} ({dest_node.hostname}:{dest_node.ssh_port})")
+        logger.info(f"[MIGRATION JOB] Tipo migrazione: {job.migration_type}")
+        logger.info(f"[MIGRATION JOB] VMID destinazione: {job.dest_vm_id or job.vm_id}")
+        logger.info(f"[MIGRATION JOB] Avviato da: {'scheduler' if triggered_by is None else f'utente ID {triggered_by}'}")
+        logger.info(f"[MIGRATION JOB] Force overwrite: {force_overwrite}")
+        if job.hw_config:
+            logger.info(f"[MIGRATION JOB] HW Config: {json.dumps(job.hw_config)}")
+        
+        # Crea log entry con dettagli
         log_entry = JobLog(
             job_type="migration",
             job_id=job_id,
             node_name=f"{source_node.name} → {dest_node.name}",
             status="started",
-            message=f"Migrazione VM {job.vm_id} da {source_node.name} a {dest_node.name}",
+            message=f"Migrazione VM {job.vm_id} ({job.vm_name or 'N/A'}) da {source_node.name} a {dest_node.name} [{job.migration_type}]",
             started_at=datetime.utcnow(),
             triggered_by=triggered_by
         )
@@ -218,6 +237,11 @@ async def execute_migration_job_task(job_id: int, triggered_by: Optional[int] = 
                 log_entry.transferred = result.get("transferred", "0B")
                 log_entry.completed_at = datetime.utcnow()
                 
+                logger.info(f"[MIGRATION JOB] ========== JOB {job_id} COMPLETATO ==========")
+                logger.info(f"[MIGRATION JOB] VM: {job.vm_id} -> {result.get('vm_id', job.dest_vm_id or job.vm_id)}")
+                logger.info(f"[MIGRATION JOB] Durata: {duration}s")
+                logger.info(f"[MIGRATION JOB] Trasferiti: {result.get('transferred', 'N/A')}")
+                
                 # Notifica
                 await notification_service.send_job_notification(
                     job_name=job.name,
@@ -239,17 +263,57 @@ async def execute_migration_job_task(job_id: int, triggered_by: Optional[int] = 
             else:
                 job.last_status = "failed"
                 job.last_duration = duration
-                job.last_error = result.get("error", result.get("message", "Errore sconosciuto"))[:1000]
+                
+                # Costruisci messaggio di errore dettagliato
+                error_details = []
+                if result.get("phase"):
+                    error_details.append(f"Fase: {result.get('phase')}")
+                if result.get("exit_code"):
+                    error_details.append(f"Exit code: {result.get('exit_code')}")
+                if result.get("command"):
+                    error_details.append(f"Comando: {result.get('command')[:200]}")
+                if result.get("source_host"):
+                    error_details.append(f"Source host: {result.get('source_host')}")
+                if result.get("dest_host"):
+                    error_details.append(f"Dest host: {result.get('dest_host')}")
+                
+                error_summary = result.get("error", result.get("message", "Errore sconosciuto"))
+                if error_details:
+                    error_summary = f"{error_summary}\n\nDettagli:\n" + "\n".join(error_details)
+                
+                job.last_error = error_summary[:1000]
                 job.last_run = datetime.utcnow()
                 job.run_count += 1
                 job.error_count += 1
                 job.consecutive_failures += 1
                 
+                # Log entry con output completo
                 log_entry.status = "failed"
                 log_entry.message = result.get("message", "Errore durante migrazione")
-                log_entry.error = result.get("error", "")[:2000]
+                
+                # Includi full_output se disponibile
+                full_error = result.get("error", "")
+                if result.get("full_output"):
+                    full_error = f"{full_error}\n\n=== OUTPUT COMPLETO ===\n{result.get('full_output')}"
+                log_entry.error = full_error[:4000]  # Aumentato limite per più dettagli
+                
+                # Salva output separatamente se disponibile
+                if result.get("full_output"):
+                    log_entry.output = result.get("full_output")[:4000]
+                
                 log_entry.duration = duration
                 log_entry.completed_at = datetime.utcnow()
+                
+                # Log più dettagliato
+                logger.error(f"[MIGRATION JOB] Job {job_id} ({job.name}) FALLITO")
+                logger.error(f"[MIGRATION JOB] VM: {job.vm_id} ({job.vm_type}) | {source_node.name} -> {dest_node.name}")
+                if result.get("phase"):
+                    logger.error(f"[MIGRATION JOB] Fase fallita: {result.get('phase')}")
+                if result.get("command"):
+                    logger.error(f"[MIGRATION JOB] Comando: {result.get('command')}")
+                if result.get("exit_code"):
+                    logger.error(f"[MIGRATION JOB] Exit code: {result.get('exit_code')}")
+                logger.error(f"[MIGRATION JOB] Errore: {result.get('error', 'N/A')[:500]}")
                 
                 # Notifica errore
                 await notification_service.send_job_notification(
@@ -273,14 +337,25 @@ async def execute_migration_job_task(job_id: int, triggered_by: Optional[int] = 
             db.commit()
             
         except Exception as e:
-            logger.error(f"Errore esecuzione migration job {job_id}: {e}", exc_info=True)
+            import traceback
+            stack_trace = traceback.format_exc()
+            
+            logger.error(f"[MIGRATION JOB] ECCEZIONE durante job {job_id}")
+            logger.error(f"[MIGRATION JOB] Job: {job.name}")
+            logger.error(f"[MIGRATION JOB] VM: {job.vm_id} ({job.vm_type})")
+            logger.error(f"[MIGRATION JOB] Source: {source_node.name} ({source_node.hostname})")
+            logger.error(f"[MIGRATION JOB] Dest: {dest_node.name} ({dest_node.hostname})")
+            logger.error(f"[MIGRATION JOB] Eccezione: {type(e).__name__}: {str(e)}")
+            logger.error(f"[MIGRATION JOB] Stack trace:\n{stack_trace}")
+            
             job.last_status = "failed"
-            job.last_error = str(e)[:1000]
+            job.last_error = f"Eccezione {type(e).__name__}: {str(e)}"[:1000]
             job.error_count += 1
             job.consecutive_failures += 1
             
             log_entry.status = "failed"
-            log_entry.error = str(e)[:2000]
+            log_entry.message = f"Eccezione durante migrazione: {type(e).__name__}"
+            log_entry.error = f"Errore: {str(e)}\n\nStack trace:\n{stack_trace}"[:4000]
             log_entry.completed_at = datetime.utcnow()
             
             db.commit()

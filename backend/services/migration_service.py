@@ -78,11 +78,19 @@ class MigrationService:
         )
         
         if not check_result.success:
-            logger.error(f"VM {vm_id} non trovata su {source_hostname}: {check_result.stderr}")
+            logger.error(f"[MIGRATION] FASE: VERIFICA VM SORGENTE FALLITA")
+            logger.error(f"[MIGRATION] VM: {vm_id} | Host: {source_hostname}")
+            logger.error(f"[MIGRATION] Comando: {check_cmd}")
+            logger.error(f"[MIGRATION] Exit code: {check_result.exit_code}")
+            logger.error(f"[MIGRATION] Stderr: {check_result.stderr}")
             return {
                 "success": False,
-                "message": f"VM {vm_id} non trovata su {source_hostname}",
-                "error": check_result.stderr
+                "message": f"VM {vm_id} ({vm_type}) non trovata su {source_hostname}. Verifica che la VM esista e sia accessibile.",
+                "error": check_result.stderr or f"Comando '{check_cmd}' fallito con exit code {check_result.exit_code}",
+                "phase": "check_source_vm",
+                "exit_code": check_result.exit_code,
+                "command": check_cmd,
+                "source_host": source_hostname
             }
         
         # Crea snapshot se richiesto
@@ -100,7 +108,9 @@ class MigrationService:
             )
             
             if not snap_result.success:
-                logger.warning(f"Errore creazione snapshot: {snap_result.stderr}")
+                logger.warning(f"[MIGRATION] Snapshot pre-migrazione fallito (non bloccante)")
+                logger.warning(f"[MIGRATION] Comando: {snap_cmd}")
+                logger.warning(f"[MIGRATION] Stderr: {snap_result.stderr}")
                 # Continua comunque la migrazione
         
         # Costruisci comando di migrazione
@@ -158,7 +168,9 @@ class MigrationService:
         # Costruisci comando completo
         migrate_cmd = f"{cmd} migrate {vm_id} {target} {' '.join(migrate_options)}"
         
-        logger.info(f"Eseguendo: {migrate_cmd}")
+        logger.info(f"[MIGRATION] FASE: MIGRATE (MOVE)")
+        logger.info(f"[MIGRATION] VM: {vm_id} ({vm_type}) | {source_hostname} -> {target}")
+        logger.info(f"[MIGRATION] Comando: {migrate_cmd}")
         
         # Esegui migrazione
         migrate_result = await ssh_service.execute(
@@ -171,10 +183,12 @@ class MigrationService:
         )
         
         if not migrate_result.success:
-            full_output = migrate_result.stdout + "\n" + migrate_result.stderr
-            logger.error(f"Migrazione VM {vm_id} fallita")
-            logger.error(f"Exit code: {migrate_result.exit_code}")
-            logger.error(f"Output:\n{full_output}")
+            full_output = f"STDOUT:\n{migrate_result.stdout}\n\nSTDERR:\n{migrate_result.stderr}"
+            logger.error(f"[MIGRATION] FASE: MIGRATE (MOVE) FALLITA")
+            logger.error(f"[MIGRATION] VM: {vm_id} ({vm_type}) | {source_hostname} -> {dest_hostname}")
+            logger.error(f"[MIGRATION] Comando: {migrate_cmd}")
+            logger.error(f"[MIGRATION] Exit code: {migrate_result.exit_code}")
+            logger.error(f"[MIGRATION] Output completo:\n{full_output}")
             
             # Estrai errori specifici
             error_lines = [line for line in full_output.split('\n') if 'ERROR' in line or 'error' in line.lower()]
@@ -182,9 +196,13 @@ class MigrationService:
             
             return {
                 "success": False,
-                "message": f"Errore durante migrazione VM: {specific_error}",
+                "message": f"Migrazione (move) VM {vm_id} fallita: {specific_error[:500] if specific_error else 'Nessun dettaglio errore'}",
                 "error": specific_error,
-                "stdout": migrate_result.stdout,
+                "phase": "migrate_move",
+                "exit_code": migrate_result.exit_code,
+                "command": migrate_cmd,
+                "source_host": source_hostname,
+                "dest_host": dest_hostname,
                 "full_output": full_output
             }
         
@@ -242,6 +260,10 @@ class MigrationService:
                 logger.warning(f"Errore avvio VM: {start_result.stderr}")
         
         duration = int(time.time() - start_time)
+        
+        logger.info(f"[MIGRATION] ========== MIGRAZIONE COMPLETATA ==========")
+        logger.info(f"[MIGRATION] VM: {vm_id} -> {target_vmid} su {dest_hostname}")
+        logger.info(f"[MIGRATION] Durata: {duration}s | Trasferiti: {transferred}")
         
         return {
             "success": True,
@@ -335,13 +357,21 @@ class MigrationService:
             )
             
             if not destroy_result.success:
-                logger.error(f"Impossibile eliminare VM esistente {target_vmid} su {dest_hostname}")
-                logger.error(f"Exit code: {destroy_result.exit_code}")
-                logger.error(f"Stderr: {destroy_result.stderr}")
+                full_output = f"STDOUT:\n{destroy_result.stdout}\n\nSTDERR:\n{destroy_result.stderr}"
+                logger.error(f"[MIGRATION] FASE: ELIMINAZIONE VM ESISTENTE FALLITA")
+                logger.error(f"[MIGRATION] VM: {target_vmid} | Host: {dest_hostname}")
+                logger.error(f"[MIGRATION] Comando: {destroy_cmd}")
+                logger.error(f"[MIGRATION] Exit code: {destroy_result.exit_code}")
+                logger.error(f"[MIGRATION] Output:\n{full_output}")
                 return {
                     "success": False,
-                    "message": f"Impossibile eliminare VM esistente {target_vmid}: {destroy_result.stderr}",
-                    "error": destroy_result.stderr
+                    "message": f"Impossibile eliminare VM esistente {target_vmid} su {dest_hostname}: {destroy_result.stderr[:300] if destroy_result.stderr else 'Nessun dettaglio'}",
+                    "error": destroy_result.stderr or f"Destroy fallito con exit code {destroy_result.exit_code}",
+                    "phase": "destroy_existing_vm",
+                    "exit_code": destroy_result.exit_code,
+                    "command": destroy_cmd,
+                    "dest_host": dest_hostname,
+                    "full_output": full_output
                 }
             
             logger.info(f"VM {target_vmid} eliminata con successo")
@@ -351,6 +381,8 @@ class MigrationService:
         if create_snapshot:
             snapshot_name = f"migration-{int(time.time())}"
             snap_cmd = f"{'qm' if vm_type == 'qemu' else 'pct'} snapshot {vm_id} {snapshot_name} --description 'Pre-migration snapshot'"
+            logger.info(f"[MIGRATION] FASE: Creazione snapshot pre-migrazione")
+            logger.info(f"[MIGRATION] VM: {vm_id} | Snapshot: {snapshot_name}")
             snap_result = await ssh_service.execute(
                 hostname=source_hostname,
                 command=snap_cmd,
@@ -360,7 +392,9 @@ class MigrationService:
                 timeout=300
             )
             if not snap_result.success:
-                logger.warning(f"Errore creazione snapshot: {snap_result.stderr}")
+                logger.warning(f"[MIGRATION] Snapshot pre-migrazione fallito (non bloccante)")
+                logger.warning(f"[MIGRATION] Comando: {snap_cmd}")
+                logger.warning(f"[MIGRATION] Stderr: {snap_result.stderr}")
         
         # Determina directory di backup con spazio sufficiente
         # Priorità: /var/lib/vz/dump (standard Proxmox) > /var/tmp > /tmp
@@ -441,9 +475,14 @@ class MigrationService:
         ]
         
         last_error = None
+        last_full_output = None
         for backup_mode in backup_modes:
-            logger.info(f"Tentativo backup VM {vm_id} con mode={backup_mode}")
+            logger.info(f"[MIGRATION] FASE: BACKUP VM - Tentativo con mode={backup_mode}")
+            logger.info(f"[MIGRATION] VM: {vm_id} ({vm_type}) | Host: {source_hostname}")
+            logger.info(f"[MIGRATION] Directory backup: {backup_dir}")
             backup_cmd = f"vzdump {vm_id} --compress zstd --dumpdir {backup_dir} --mode {backup_mode} --remove 0"
+            logger.debug(f"[MIGRATION] Comando: {backup_cmd}")
+            
             backup_result = await ssh_service.execute(
                 hostname=source_hostname,
                 command=backup_cmd,
@@ -455,25 +494,30 @@ class MigrationService:
             
             if backup_result.success:
                 used_mode = backup_mode
-                logger.info(f"Backup VM {vm_id} completato con mode={backup_mode}")
+                logger.info(f"[MIGRATION] Backup VM {vm_id} completato con mode={backup_mode}")
                 break
             
             # Controlla se l'errore è recuperabile (prova prossimo mode)
-            full_output = (backup_result.stdout + "\n" + backup_result.stderr).lower()
-            is_recoverable = any(err in full_output for err in recoverable_errors)
+            full_output_lower = (backup_result.stdout + "\n" + backup_result.stderr).lower()
+            is_recoverable = any(err in full_output_lower for err in recoverable_errors)
+            
+            full_output = f"STDOUT:\n{backup_result.stdout}\n\nSTDERR:\n{backup_result.stderr}"
+            last_full_output = full_output
             
             if is_recoverable:
-                logger.warning(f"Mode {backup_mode} fallito per errore recuperabile, provo alternativa...")
-                logger.warning(f"Errore: {backup_result.stderr[:200]}")
+                logger.warning(f"[MIGRATION] Mode {backup_mode} fallito - errore recuperabile, provo alternativa")
+                logger.warning(f"[MIGRATION] Exit code: {backup_result.exit_code}")
+                logger.warning(f"[MIGRATION] Errore: {backup_result.stderr[:300]}")
                 last_error = backup_result.stderr
                 continue
             else:
                 # Errore non recuperabile, fallisci subito
-                full_output = backup_result.stdout + "\n" + backup_result.stderr
-                logger.error(f"Backup VM {vm_id} fallito (mode={backup_mode}) - errore non recuperabile")
-                logger.error(f"Comando: {backup_cmd}")
-                logger.error(f"Exit code: {backup_result.exit_code}")
-                logger.error(f"Output completo:\n{full_output}")
+                logger.error(f"[MIGRATION] FASE: BACKUP FALLITO (errore non recuperabile)")
+                logger.error(f"[MIGRATION] VM: {vm_id} ({vm_type}) | Host: {source_hostname}")
+                logger.error(f"[MIGRATION] Mode: {backup_mode}")
+                logger.error(f"[MIGRATION] Comando: {backup_cmd}")
+                logger.error(f"[MIGRATION] Exit code: {backup_result.exit_code}")
+                logger.error(f"[MIGRATION] Output completo:\n{full_output}")
                 
                 # Estrai errori specifici dall'output
                 error_lines = [line for line in full_output.split('\n') if 'ERROR' in line or 'error' in line.lower()]
@@ -481,18 +525,33 @@ class MigrationService:
                 
                 return {
                     "success": False,
-                    "message": f"Errore creazione backup (mode={backup_mode}): {specific_error}",
+                    "message": f"Backup VM {vm_id} fallito (mode={backup_mode}): {specific_error[:500] if specific_error else 'Nessun dettaglio'}",
                     "error": specific_error,
+                    "phase": "backup",
+                    "backup_mode": backup_mode,
+                    "exit_code": backup_result.exit_code,
+                    "command": backup_cmd,
+                    "source_host": source_hostname,
+                    "backup_dir": backup_dir,
                     "full_output": full_output
                 }
         
         if not backup_result or not backup_result.success:
-            logger.error(f"Backup VM {vm_id} fallito con tutti i mode (snapshot, suspend, stop)")
-            logger.error(f"Ultimo errore: {last_error}")
+            logger.error(f"[MIGRATION] FASE: BACKUP FALLITO - Tutti i mode esauriti")
+            logger.error(f"[MIGRATION] VM: {vm_id} ({vm_type}) | Host: {source_hostname}")
+            logger.error(f"[MIGRATION] Mode provati: {', '.join(backup_modes)}")
+            logger.error(f"[MIGRATION] Ultimo errore: {last_error}")
+            if last_full_output:
+                logger.error(f"[MIGRATION] Ultimo output completo:\n{last_full_output}")
             return {
                 "success": False,
-                "message": f"Errore creazione backup: tutti i mode falliti. Ultimo errore: {last_error}",
-                "error": last_error or "Tutti i mode di backup falliti (snapshot, suspend, stop)"
+                "message": f"Backup VM {vm_id} fallito con tutti i mode (snapshot, suspend, stop). Ultimo errore: {last_error[:300] if last_error else 'Nessun dettaglio'}",
+                "error": last_error or "Tutti i mode di backup falliti (snapshot, suspend, stop)",
+                "phase": "backup",
+                "backup_modes_tried": backup_modes,
+                "source_host": source_hostname,
+                "backup_dir": backup_dir,
+                "full_output": last_full_output
             }
         
         # Trova il file di backup creato
@@ -508,14 +567,22 @@ class MigrationService:
         )
         
         if not find_result.success or not find_result.stdout.strip():
-            logger.error(f"File di backup non trovato per VM {vm_id}")
-            logger.error(f"Comando ricerca: {find_backup_cmd}")
-            logger.error(f"Stdout: {find_result.stdout}")
-            logger.error(f"Stderr: {find_result.stderr}")
+            logger.error(f"[MIGRATION] FASE: RICERCA FILE BACKUP FALLITA")
+            logger.error(f"[MIGRATION] VM: {vm_id} ({vm_type}) | Host: {source_hostname}")
+            logger.error(f"[MIGRATION] Directory cercata: {backup_dir}")
+            logger.error(f"[MIGRATION] Pattern cercato: vzdump-{vm_type}-{vm_id}-*.vma.zst o .tar.zst")
+            logger.error(f"[MIGRATION] Comando: {find_backup_cmd}")
+            logger.error(f"[MIGRATION] Stdout: {find_result.stdout}")
+            logger.error(f"[MIGRATION] Stderr: {find_result.stderr}")
             return {
                 "success": False,
-                "message": "File di backup non trovato",
-                "error": f"Backup creato ma file non trovato in {backup_dir}"
+                "message": f"File di backup non trovato in {backup_dir}. Il backup potrebbe essere stato creato in una directory diversa o con un nome inatteso.",
+                "error": f"Backup creato ma file non trovato in {backup_dir}",
+                "phase": "find_backup_file",
+                "backup_dir": backup_dir,
+                "search_pattern": f"vzdump-{vm_type}-{vm_id}-*.vma.zst",
+                "source_host": source_hostname,
+                "command": find_backup_cmd
             }
         
         backup_file = find_result.stdout.strip()
@@ -548,7 +615,9 @@ class MigrationService:
         logger.info(f"Backup VM {vm_id} creato: {backup_file} ({backup_size_human})")
         
         # Trasferisci backup sul nodo destinazione usando rsync con progress
-        logger.info(f"Inizio trasferimento {backup_size_human} verso {dest_hostname}...")
+        logger.info(f"[MIGRATION] FASE: TRASFERIMENTO BACKUP")
+        logger.info(f"[MIGRATION] File: {backup_file} ({backup_size_human})")
+        logger.info(f"[MIGRATION] Destinazione: {dest_hostname}:/var/tmp/")
         
         # Usa rsync per avere progress e migliore gestione errori
         # --info=progress2 mostra progresso globale
@@ -593,14 +662,21 @@ class MigrationService:
                 username=source_user,
                 key_path=source_key
             )
-            logger.error(f"Trasferimento backup fallito per VM {vm_id}")
-            logger.error(f"Comando fallito con exit code: {transfer_result.exit_code}")
-            logger.error(f"Stderr: {transfer_result.stderr}")
-            logger.error(f"Stdout: {transfer_result.stdout}")
+            full_output = f"STDOUT:\n{transfer_result.stdout}\n\nSTDERR:\n{transfer_result.stderr}"
+            logger.error(f"[MIGRATION] FASE: TRASFERIMENTO FALLITO")
+            logger.error(f"[MIGRATION] VM: {vm_id} | Source: {source_hostname} -> Dest: {dest_hostname}")
+            logger.error(f"[MIGRATION] Exit code: {transfer_result.exit_code}")
+            logger.error(f"[MIGRATION] Output completo:\n{full_output}")
             return {
                 "success": False,
-                "message": f"Errore trasferimento backup: {scp_result.stderr}",
-                "error": scp_result.stderr
+                "message": f"Errore trasferimento backup verso {dest_hostname}: {transfer_result.stderr[:500] if transfer_result.stderr else 'Nessun output stderr'}",
+                "error": transfer_result.stderr or "Trasferimento fallito senza dettagli",
+                "phase": "transfer",
+                "exit_code": transfer_result.exit_code,
+                "full_output": full_output,
+                "source_host": source_hostname,
+                "dest_host": dest_hostname,
+                "backup_file": backup_file
             }
         
         remote_backup = f"/var/tmp/{backup_file.split('/')[-1]}"
@@ -653,7 +729,10 @@ class MigrationService:
                         "error": "Storage not found"
                     }
         
-        logger.info(f"Usando storage destinazione: {dest_storage}")
+        logger.info(f"[MIGRATION] FASE: RESTORE")
+        logger.info(f"[MIGRATION] VM: {target_vmid} ({vm_type}) | Host: {dest_hostname}")
+        logger.info(f"[MIGRATION] Storage destinazione: {dest_storage}")
+        logger.info(f"[MIGRATION] File backup: {remote_backup}")
         
         # pct restore ha ordine parametri diverso: pct restore <vmid> <backup> --storage <storage>
         if vm_type == "lxc":
@@ -688,11 +767,14 @@ class MigrationService:
         )
         
         if not restore_result.success:
-            full_output = restore_result.stdout + "\n" + restore_result.stderr
-            logger.error(f"Restore VM {vm_id} fallito su {dest_hostname}")
-            logger.error(f"Comando: {restore_cmd}")
-            logger.error(f"Exit code: {restore_result.exit_code}")
-            logger.error(f"Output:\n{full_output}")
+            full_output = f"STDOUT:\n{restore_result.stdout}\n\nSTDERR:\n{restore_result.stderr}"
+            logger.error(f"[MIGRATION] FASE: RESTORE FALLITO")
+            logger.error(f"[MIGRATION] VM: {target_vmid} ({vm_type}) | Host destinazione: {dest_hostname}")
+            logger.error(f"[MIGRATION] Storage: {dest_storage}")
+            logger.error(f"[MIGRATION] File backup: {remote_backup}")
+            logger.error(f"[MIGRATION] Comando: {restore_cmd}")
+            logger.error(f"[MIGRATION] Exit code: {restore_result.exit_code}")
+            logger.error(f"[MIGRATION] Output completo:\n{full_output}")
             
             # Estrai errori specifici
             error_lines = [line for line in full_output.split('\n') if 'ERROR' in line or 'error' in line.lower()]
@@ -700,8 +782,14 @@ class MigrationService:
             
             return {
                 "success": False,
-                "message": f"Errore restore: {specific_error}",
+                "message": f"Restore VM {target_vmid} fallito su {dest_hostname}: {specific_error[:500] if specific_error else 'Nessun dettaglio'}",
                 "error": specific_error,
+                "phase": "restore",
+                "exit_code": restore_result.exit_code,
+                "command": restore_cmd,
+                "dest_host": dest_hostname,
+                "dest_storage": dest_storage,
+                "backup_file": remote_backup,
                 "full_output": full_output
             }
         
@@ -757,6 +845,11 @@ class MigrationService:
         
         # Usa backup_size_human se transferred non è stato calcolato
         final_transferred = backup_size_human if backup_size_human != "N/A" else transferred
+        
+        logger.info(f"[MIGRATION] ========== COPIA COMPLETATA ==========")
+        logger.info(f"[MIGRATION] VM: {vm_id} -> {target_vmid} su {dest_hostname}")
+        logger.info(f"[MIGRATION] Durata: {duration}s | Trasferiti: {final_transferred}")
+        logger.info(f"[MIGRATION] Backup mode usato: {used_mode}")
         
         return {
             "success": True,
