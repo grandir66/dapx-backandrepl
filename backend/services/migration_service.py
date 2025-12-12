@@ -231,9 +231,9 @@ class MigrationService:
                 logger.warning(f"Errore applicazione config hardware: {hw_result.get('message')}")
                 # Non fallisce la migrazione, solo warning
         
-        # Gestione snapshot
-        if snapshot_name and keep_snapshots > 0:
-            # Mantieni solo gli ultimi N snapshot
+        # Gestione snapshot - esegui sempre il pruning se keep_snapshots > 0
+        if keep_snapshots > 0:
+            logger.info(f"[MIGRATION] Esecuzione pruning snapshot (keep={keep_snapshots})")
             await self._prune_snapshots(
                 hostname=source_hostname,
                 vm_id=vm_id,
@@ -243,6 +243,8 @@ class MigrationService:
                 username=source_user,
                 key_path=source_key
             )
+        else:
+            logger.info(f"[MIGRATION] Pruning snapshot saltato (keep_snapshots={keep_snapshots})")
         
         # Avvia VM se richiesto
         if start_after:
@@ -815,8 +817,9 @@ class MigrationService:
             if not hw_result["success"]:
                 logger.warning(f"Errore applicazione config hardware: {hw_result.get('message')}")
         
-        # Gestione snapshot
-        if snapshot_name and keep_snapshots > 0:
+        # Gestione snapshot - esegui sempre il pruning se keep_snapshots > 0
+        if keep_snapshots > 0:
+            logger.info(f"[MIGRATION] Esecuzione pruning snapshot (keep={keep_snapshots})")
             await self._prune_snapshots(
                 hostname=source_hostname,
                 vm_id=vm_id,
@@ -826,6 +829,8 @@ class MigrationService:
                 username=source_user,
                 key_path=source_key
             )
+        else:
+            logger.info(f"[MIGRATION] Pruning snapshot saltato (keep_snapshots={keep_snapshots})")
         
         # Avvia VM se richiesto
         if start_after:
@@ -1096,11 +1101,14 @@ class MigrationService:
         username: str = "root",
         key_path: str = "/root/.ssh/id_rsa"
     ):
-        """Mantiene solo gli ultimi N snapshot, elimina i più vecchi"""
+        """Mantiene solo gli ultimi N snapshot di migrazione, elimina i più vecchi"""
         cmd = "qm" if vm_type == "qemu" else "pct"
         
-        # Lista snapshot
-        list_cmd = f"{cmd} listsnapshot {vm_id} 2>/dev/null | grep -E '^\\s+[0-9]' | tail -n +2"
+        logger.info(f"[MIGRATION] FASE: PRUNING SNAPSHOT")
+        logger.info(f"[MIGRATION] VM: {vm_id} ({vm_type}) | Host: {hostname} | Keep: {keep}")
+        
+        # Lista snapshot - usa comando raw senza grep per parsare correttamente
+        list_cmd = f"{cmd} listsnapshot {vm_id} 2>/dev/null"
         list_result = await ssh_service.execute(
             hostname=hostname,
             command=list_cmd,
@@ -1111,26 +1119,77 @@ class MigrationService:
         )
         
         if not list_result.success:
+            logger.warning(f"[MIGRATION] Impossibile listare snapshot VM {vm_id}: {list_result.stderr}")
             return
         
-        # Estrai nomi snapshot (escludi current)
+        logger.debug(f"[MIGRATION] Output listsnapshot:\n{list_result.stdout}")
+        
+        # Estrai nomi snapshot (escludi 'current')
+        # Formato output: "`-> snap_name   description" oppure "    `-> snap_name   description"
+        # oppure semplicemente "snap_name   description"
         snapshots = []
+        migration_snapshots = []  # Solo snapshot di migrazione (migration-*)
+        
         for line in list_result.stdout.strip().split('\n'):
-            if line.strip() and 'current' not in line.lower():
-                # Estrai nome snapshot (prima colonna dopo spazi)
-                parts = line.strip().split()
-                if parts:
-                    snap_name = parts[0]
-                    snapshots.append(snap_name)
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Salta la riga 'current'
+            if line.lower().startswith('current'):
+                continue
+            
+            # Rimuovi prefisso `-> se presente
+            if '`->' in line:
+                line = line.split('`->')[-1].strip()
+            
+            # Estrai nome snapshot (prima parola)
+            parts = line.split()
+            if parts:
+                snap_name = parts[0]
+                # Salta 'current' ovunque appaia
+                if snap_name.lower() == 'current':
+                    continue
+                snapshots.append(snap_name)
+                # Identifica snapshot di migrazione
+                if snap_name.startswith('migration-'):
+                    migration_snapshots.append(snap_name)
         
-        # Ordina per data (assumendo formato snapshot-YYYYMMDD-HHMMSS o simile)
-        snapshots.sort(reverse=True)
+        logger.info(f"[MIGRATION] Trovati {len(snapshots)} snapshot totali, {len(migration_snapshots)} di migrazione")
+        logger.debug(f"[MIGRATION] Tutti gli snapshot: {snapshots}")
+        logger.debug(f"[MIGRATION] Snapshot migrazione: {migration_snapshots}")
         
-        # Elimina quelli oltre keep
-        to_delete = snapshots[keep:]
+        # Ordina snapshot di migrazione per timestamp (formato: migration-TIMESTAMP)
+        # Gli snapshot più recenti hanno timestamp maggiore
+        def get_timestamp(snap_name):
+            try:
+                # Estrai timestamp da "migration-1234567890"
+                if snap_name.startswith('migration-'):
+                    ts = snap_name.replace('migration-', '')
+                    return int(ts)
+            except (ValueError, IndexError):
+                pass
+            return 0
+        
+        migration_snapshots.sort(key=get_timestamp, reverse=True)  # Più recenti prima
+        
+        # Elimina snapshot di migrazione oltre il limite
+        to_delete = migration_snapshots[keep:]
+        
+        if not to_delete:
+            logger.info(f"[MIGRATION] Nessuno snapshot da eliminare (trovati {len(migration_snapshots)}, keep {keep})")
+            return
+        
+        logger.info(f"[MIGRATION] Eliminazione {len(to_delete)} snapshot: {to_delete}")
+        
+        deleted_count = 0
+        failed_count = 0
+        
         for snap_name in to_delete:
             del_cmd = f"{cmd} delsnapshot {vm_id} {snap_name}"
-            await ssh_service.execute(
+            logger.info(f"[MIGRATION] Eliminazione snapshot: {snap_name}")
+            
+            del_result = await ssh_service.execute(
                 hostname=hostname,
                 command=del_cmd,
                 port=port,
@@ -1138,6 +1197,18 @@ class MigrationService:
                 key_path=key_path,
                 timeout=300
             )
+            
+            if del_result.success:
+                deleted_count += 1
+                logger.info(f"[MIGRATION] ✓ Snapshot {snap_name} eliminato")
+            else:
+                failed_count += 1
+                logger.error(f"[MIGRATION] ✗ Errore eliminazione snapshot {snap_name}")
+                logger.error(f"[MIGRATION] Comando: {del_cmd}")
+                logger.error(f"[MIGRATION] Exit code: {del_result.exit_code}")
+                logger.error(f"[MIGRATION] Stderr: {del_result.stderr}")
+        
+        logger.info(f"[MIGRATION] Pruning completato: {deleted_count} eliminati, {failed_count} falliti")
 
 
 migration_service = MigrationService()
