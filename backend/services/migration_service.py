@@ -9,10 +9,12 @@ import logging
 import re
 import json
 import time
+from datetime import datetime
 
 from services.ssh_service import ssh_service, SSHResult
+from services.logging_config import get_logger, get_operation_logger, OperationLogger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class MigrationService:

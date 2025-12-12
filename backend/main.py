@@ -17,13 +17,19 @@ from database import engine, Base, get_db, init_default_config, SessionLocal
 from routers import nodes, snapshots, sync_jobs, vms, logs, settings, auth, ssh_keys
 from routers import recovery_jobs, backup_jobs, host_info, host_backup, migration_jobs, updates
 from services.scheduler import SchedulerService
+from services.logging_config import setup_logging, get_logger
 
-# Configurazione logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# Configurazione logging avanzato
+# Variabili ambiente supportate:
+#   DAPX_LOG_LEVEL: DEBUG, INFO, WARNING, ERROR (default: INFO)
+#   DAPX_LOG_DIR: directory per file di log (default: /var/log/dapx-backandrepl)
+#   DAPX_LOG_VERBOSE: true/false per log extra verbosi
+setup_logging(
+    console_output=True,
+    file_output=True,
+    json_output=False
 )
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Inizializzazione scheduler
 scheduler = SchedulerService()
@@ -57,7 +63,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="DAPX-backandrepl",
     description="Sistema centralizzato di backup e replica per Proxmox VE. Supporta ZFS (Sanoid/Syncoid), BTRFS (btrfs send/receive) e PBS (Proxmox Backup Server).",
-    version="3.4.5",
+    version="3.5.9",
     lifespan=lifespan
 )
 
@@ -110,7 +116,7 @@ app.include_router(updates.router, tags=["Updates"])
 async def health_check():
     return {
         "status": "healthy",
-        "version": "3.4.5",
+        "version": "3.5.9",
         "auth_enabled": True,
         "features": ["zfs", "btrfs", "pbs"]
     }
