@@ -3,16 +3,23 @@ Router per gestione log
 Con autenticazione
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel
+import os
+import subprocess
+import logging
 
 from database import get_db, JobLog, User, AuditLog
 from routers.auth import get_current_user, require_admin
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+# Directory dei log di sistema
+SYSTEM_LOG_DIR = os.environ.get("DAPX_LOG_DIR", "/var/log/dapx-backandrepl")
 
 
 # ============== Schemas ==============
@@ -239,3 +246,295 @@ async def cleanup_audit_logs(
     db.commit()
     
     return {"message": f"Eliminati {count} audit log più vecchi di {days} giorni"}
+
+
+# ============== System Log Endpoints ==============
+
+@router.get("/system")
+async def get_system_logs(
+    lines: int = Query(default=200, le=2000, description="Numero di righe da restituire"),
+    level: Optional[str] = Query(default=None, description="Filtra per livello (DEBUG, INFO, WARNING, ERROR)"),
+    search: Optional[str] = Query(default=None, description="Cerca nel testo"),
+    file: str = Query(default="dapx.log", description="File di log (dapx.log, dapx-errors.log)"),
+    user: User = Depends(require_admin)
+):
+    """
+    Legge i log di sistema dal file (solo admin).
+    
+    I log di sistema contengono dettagli estesi:
+    - Timestamp preciso
+    - Modulo e funzione
+    - Numero di linea
+    - Thread/Task asyncio
+    """
+    # Valida nome file (previeni path traversal)
+    allowed_files = ["dapx.log", "dapx-errors.log", "dapx.json.log"]
+    if file not in allowed_files:
+        raise HTTPException(status_code=400, detail=f"File non valido. Ammessi: {', '.join(allowed_files)}")
+    
+    log_file = os.path.join(SYSTEM_LOG_DIR, file)
+    
+    # Se il file non esiste, prova a leggere da journalctl
+    if not os.path.exists(log_file):
+        logger.info(f"File {log_file} non trovato, uso journalctl")
+        return await get_journalctl_logs(lines, level, search)
+    
+    try:
+        # Leggi ultime N righe del file
+        result = subprocess.run(
+            ["tail", "-n", str(lines), log_file],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"Errore lettura log: {result.stderr}")
+        
+        log_lines = result.stdout.strip().split('\n')
+        
+        # Filtra per livello se specificato
+        if level:
+            level = level.upper()
+            log_lines = [l for l in log_lines if level in l]
+        
+        # Filtra per testo se specificato
+        if search:
+            search_lower = search.lower()
+            log_lines = [l for l in log_lines if search_lower in l.lower()]
+        
+        # Parse delle righe per struttura
+        parsed_logs = []
+        for line in log_lines:
+            if not line.strip():
+                continue
+            
+            parsed = parse_log_line(line)
+            parsed_logs.append(parsed)
+        
+        return {
+            "source": "file",
+            "file": log_file,
+            "total_lines": len(parsed_logs),
+            "filters": {
+                "level": level,
+                "search": search
+            },
+            "logs": parsed_logs
+        }
+        
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=500, detail="Timeout lettura log")
+    except Exception as e:
+        logger.error(f"Errore lettura log di sistema: {e}")
+        raise HTTPException(status_code=500, detail=f"Errore: {str(e)}")
+
+
+async def get_journalctl_logs(lines: int, level: Optional[str], search: Optional[str]):
+    """Fallback: legge log da journalctl"""
+    try:
+        cmd = ["journalctl", "-u", "sanoid-manager", "-n", str(lines), "--no-pager", "-o", "short-iso"]
+        
+        # Aggiungi filtro priorità se specificato
+        priority_map = {
+            "DEBUG": "7",
+            "INFO": "6", 
+            "WARNING": "4",
+            "ERROR": "3"
+        }
+        if level and level.upper() in priority_map:
+            cmd.extend(["-p", priority_map[level.upper()]])
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        
+        log_lines = result.stdout.strip().split('\n')
+        
+        # Filtra per testo se specificato
+        if search:
+            search_lower = search.lower()
+            log_lines = [l for l in log_lines if search_lower in l.lower()]
+        
+        parsed_logs = []
+        for line in log_lines:
+            if not line.strip() or line.startswith("--"):
+                continue
+            parsed_logs.append({
+                "raw": line,
+                "timestamp": None,
+                "level": "INFO",
+                "module": "journalctl",
+                "message": line
+            })
+        
+        return {
+            "source": "journalctl",
+            "total_lines": len(parsed_logs),
+            "filters": {
+                "level": level,
+                "search": search
+            },
+            "logs": parsed_logs
+        }
+    except Exception as e:
+        logger.error(f"Errore lettura journalctl: {e}")
+        raise HTTPException(status_code=500, detail=f"Errore journalctl: {str(e)}")
+
+
+def parse_log_line(line: str) -> dict:
+    """
+    Parse di una riga di log nel formato:
+    2025-12-12 11:04:40.123 INFO     module.name                    function:42              [Thread] message
+    """
+    result = {
+        "raw": line,
+        "timestamp": None,
+        "level": None,
+        "module": None,
+        "function": None,
+        "line_no": None,
+        "thread": None,
+        "message": line
+    }
+    
+    try:
+        # Prova a parsare il formato dettagliato
+        parts = line.split(None, 5)  # Split sui primi 5 spazi
+        
+        if len(parts) >= 2:
+            # Timestamp (YYYY-MM-DD HH:MM:SS.mmm)
+            if len(parts[0]) == 10 and '-' in parts[0]:  # Data
+                result["timestamp"] = f"{parts[0]} {parts[1]}"
+                
+                if len(parts) >= 3:
+                    # Livello
+                    level = parts[2].strip()
+                    if level in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+                        result["level"] = level
+                    
+                    if len(parts) >= 4:
+                        # Modulo
+                        result["module"] = parts[3].strip()
+                        
+                        if len(parts) >= 5:
+                            # Funzione:linea
+                            func_line = parts[4].strip()
+                            if ':' in func_line:
+                                func, line_no = func_line.rsplit(':', 1)
+                                result["function"] = func
+                                try:
+                                    result["line_no"] = int(line_no)
+                                except ValueError:
+                                    pass
+                            
+                            if len(parts) >= 6:
+                                # Resto del messaggio (include thread e messaggio)
+                                rest = parts[5]
+                                # Estrai thread se presente [Thread/Task]
+                                if rest.startswith('[') and ']' in rest:
+                                    thread_end = rest.index(']')
+                                    result["thread"] = rest[1:thread_end]
+                                    result["message"] = rest[thread_end+1:].strip()
+                                else:
+                                    result["message"] = rest.strip()
+    except Exception:
+        pass  # Mantieni il raw se il parsing fallisce
+    
+    return result
+
+
+@router.get("/system/files")
+async def list_log_files(user: User = Depends(require_admin)):
+    """Lista i file di log disponibili"""
+    files = []
+    
+    if os.path.exists(SYSTEM_LOG_DIR):
+        for filename in os.listdir(SYSTEM_LOG_DIR):
+            filepath = os.path.join(SYSTEM_LOG_DIR, filename)
+            if os.path.isfile(filepath):
+                stat = os.stat(filepath)
+                files.append({
+                    "name": filename,
+                    "path": filepath,
+                    "size": stat.st_size,
+                    "size_human": format_size(stat.st_size),
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                })
+    
+    # Aggiungi info su journalctl
+    try:
+        result = subprocess.run(
+            ["journalctl", "-u", "sanoid-manager", "--disk-usage"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            files.append({
+                "name": "journalctl (sanoid-manager)",
+                "path": "journalctl",
+                "size": 0,
+                "size_human": result.stdout.strip(),
+                "modified": None
+            })
+    except Exception:
+        pass
+    
+    return {
+        "log_dir": SYSTEM_LOG_DIR,
+        "log_dir_exists": os.path.exists(SYSTEM_LOG_DIR),
+        "files": files
+    }
+
+
+@router.get("/system/live")
+async def get_live_logs(
+    lines: int = Query(default=50, le=500),
+    user: User = Depends(require_admin)
+):
+    """
+    Ottiene gli ultimi log in tempo reale (per polling).
+    Utile per aggiornamento live nell'interfaccia.
+    """
+    log_file = os.path.join(SYSTEM_LOG_DIR, "dapx.log")
+    
+    if os.path.exists(log_file):
+        try:
+            result = subprocess.run(
+                ["tail", "-n", str(lines), log_file],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            log_lines = result.stdout.strip().split('\n') if result.stdout else []
+        except Exception:
+            log_lines = []
+    else:
+        # Fallback a journalctl
+        try:
+            result = subprocess.run(
+                ["journalctl", "-u", "sanoid-manager", "-n", str(lines), "--no-pager"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            log_lines = result.stdout.strip().split('\n') if result.stdout else []
+        except Exception:
+            log_lines = []
+    
+    return {
+        "timestamp": datetime.utcnow().isoformat(),
+        "count": len(log_lines),
+        "logs": log_lines[-lines:]  # Ultime N righe
+    }
+
+
+def format_size(size_bytes: int) -> str:
+    """Formatta dimensione in formato leggibile"""
+    if size_bytes >= 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024*1024*1024):.2f} GB"
+    elif size_bytes >= 1024 * 1024:
+        return f"{size_bytes / (1024*1024):.2f} MB"
+    elif size_bytes >= 1024:
+        return f"{size_bytes / 1024:.2f} KB"
+    else:
+        return f"{size_bytes} B"
