@@ -83,7 +83,5 @@ Thumbs.db
 *.crt
 *.key
 *.pem
-!backend/scripts/generate_cert.py
-
-# Old/unused directories
+!backend/scripts/generate_cert.py# Old/unused directories
 backend-btrfs/
