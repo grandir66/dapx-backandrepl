@@ -505,6 +505,152 @@
             gap: 12px;
         }
         
+        /* Modal Unified Classes */
+        .modal-unified {
+            max-width: 600px;
+        }
+        
+        .modal-unified-lg {
+            max-width: 800px;
+        }
+        
+        .modal-unified-xl {
+            max-width: 1000px;
+        }
+        
+        /* Modal Sections */
+        .modal-section {
+            background: var(--bg-tertiary);
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .modal-section-title {
+            color: var(--accent-primary);
+            margin-bottom: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .modal-section:last-child {
+            margin-bottom: 0;
+        }
+        
+        /* Form Validation Styles */
+        .form-error {
+            color: var(--accent-danger);
+            font-size: 0.85rem;
+            margin-top: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .form-error::before {
+            content: '⚠';
+            font-size: 0.9rem;
+        }
+        
+        .form-input.invalid {
+            border-color: var(--accent-danger);
+            background: rgba(255, 71, 87, 0.05);
+        }
+        
+        .form-input.invalid:focus {
+            border-color: var(--accent-danger);
+            box-shadow: 0 0 0 3px rgba(255, 71, 87, 0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 16px;
+        }
+        
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            font-size: 0.875rem;
+            color: var(--text-primary);
+        }
+        
+        .form-label.required::after {
+            content: ' *';
+            color: var(--accent-danger);
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(0, 255, 157, 0.1);
+        }
+        
+        .form-input:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .form-help {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+            display: block;
+        }
+        
+        /* Collapsible Section */
+        .collapsible-section {
+            margin-bottom: 16px;
+        }
+        
+        .collapsible-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s ease;
+        }
+        
+        .collapsible-header:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+        
+        .collapsible-header h4 {
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+        
+        .collapsible-content {
+            padding: 16px;
+            background: var(--bg-tertiary);
+            border-radius: 0 0 8px 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
         /* Toast */
         .toast-container {
             position: fixed;
@@ -532,8 +678,53 @@
             to { transform: translateX(0); opacity: 1; }
         }
         
-        .toast-success { border-left: 4px solid var(--accent-primary); }
-        .toast-error { border-left: 4px solid var(--accent-danger); }
+        .toast-success { 
+            border-left: 4px solid var(--accent-primary);
+            background: rgba(0, 255, 157, 0.05);
+        }
+        .toast-error { 
+            border-left: 4px solid var(--accent-danger);
+            background: rgba(255, 71, 87, 0.05);
+        }
+        .toast-warning {
+            border-left: 4px solid var(--accent-warning);
+            background: rgba(255, 179, 0, 0.05);
+        }
+        .toast-info {
+            border-left: 4px solid var(--accent-secondary);
+            background: rgba(0, 212, 255, 0.05);
+        }
+        
+        .toast-icon {
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+        
+        .toast-message {
+            flex: 1;
+            font-size: 0.875rem;
+            line-height: 1.4;
+        }
+        
+        .toast-close {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 0;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.6;
+            transition: opacity 0.2s ease;
+        }
+        
+        .toast-close:hover {
+            opacity: 1;
+        }
         
         /* Spinner */
         .spinner {
@@ -2448,60 +2639,118 @@
                 <!-- Nuovo Backup Job -->
                 <div class="card">
                     <h3 class="card-title">➕ Nuovo Backup Job</h3>
-                    <div class="grid-3">
+                    
+                    <!-- Sezione: Informazioni Base -->
+                    <div class="modal-section">
+                        <h4 class="modal-section-title">📋 Informazioni Base</h4>
                         <div class="form-group">
-                            <label class="form-label">Nome Job</label>
-                            <input type="text" class="form-input" v-model="newBackupJob.name" placeholder="es: Backup-VM-Web">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Nodo Sorgente (PVE)</label>
-                            <select class="form-input" v-model="newBackupJob.source_node_id" @change="loadSourceVmsForBackup">
-                                <option value="">-- Seleziona --</option>
-                                <option v-for="node in pveNodes" :key="node.id" :value="node.id">{{ node.name }}</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">VM da backuppare</label>
-                            <select class="form-input" v-model="newBackupJob.vm_id" @change="selectBackupVm">
-                                <option value="">-- Seleziona VM --</option>
-                                <option v-for="vm in sourceVmsForBackup" :key="vm.vmid" :value="vm.vmid">
-                                    {{ vm.vmid }} - {{ vm.name || 'VM' }} ({{ vm.type }})
-                                </option>
-                            </select>
+                            <label class="form-label required">Nome Job</label>
+                            <input type="text" 
+                                   class="form-input" 
+                                   :class="{ invalid: getFieldError('backupJob_name') }"
+                                   v-model="newBackupJob.name" 
+                                   @input="clearFieldError('backupJob_name')"
+                                   placeholder="es: Backup-VM-Web">
+                            <span class="form-error" v-if="getFieldError('backupJob_name')">{{ getFieldError('backupJob_name') }}</span>
                         </div>
                     </div>
-                    <div class="grid-3">
-                        <div class="form-group">
-                            <label class="form-label">Nodo PBS Destinazione</label>
-                            <select class="form-input" v-model="newBackupJob.pbs_node_id">
-                                <option value="">-- Seleziona PBS --</option>
-                                <option v-for="node in pbsNodes" :key="node.id" :value="node.id">{{ node.name }} ({{ node.hostname }})</option>
-                            </select>
+                    
+                    <!-- Sezione: Sorgente -->
+                    <div class="modal-section">
+                        <h4 class="modal-section-title">📤 Sorgente</h4>
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label required">Nodo Sorgente (PVE)</label>
+                                <select class="form-input" 
+                                        :class="{ invalid: getFieldError('backupJob_source_node_id') }"
+                                        v-model="newBackupJob.source_node_id" 
+                                        @change="loadSourceVmsForBackup(); clearFieldError('backupJob_source_node_id')">
+                                    <option value="">-- Seleziona --</option>
+                                    <option v-for="node in pveNodes" :key="node.id" :value="node.id">{{ node.name }}</option>
+                                </select>
+                                <span class="form-error" v-if="getFieldError('backupJob_source_node_id')">{{ getFieldError('backupJob_source_node_id') }}</span>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label required">VM da backuppare</label>
+                                <select class="form-input" 
+                                        :class="{ invalid: getFieldError('backupJob_vm_id') }"
+                                        v-model="newBackupJob.vm_id" 
+                                        @change="selectBackupVm(); clearFieldError('backupJob_vm_id')">
+                                    <option value="">-- Seleziona VM --</option>
+                                    <option v-for="vm in sourceVmsForBackup" :key="vm.vmid" :value="vm.vmid">
+                                        {{ vm.vmid }} - {{ vm.name || 'VM' }} ({{ vm.type }})
+                                    </option>
+                                </select>
+                                <span class="form-error" v-if="getFieldError('backupJob_vm_id')">{{ getFieldError('backupJob_vm_id') }}</span>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">Storage PBS (sul nodo sorgente)</label>
-                            <select class="form-input" v-model="newBackupJob.pbs_storage_id" v-if="backupPbsStorages.length > 0">
-                                <option value="">-- Seleziona Storage PBS --</option>
-                                <option v-for="st in backupPbsStorages" :key="st.storage" :value="st.storage">
-                                    {{ st.storage }} ({{ st.server || 'PBS' }})
-                                </option>
-                            </select>
-                            <input type="text" class="form-input" v-model="newBackupJob.pbs_storage_id" placeholder="es: pbs-backup" v-else>
-                            <small style="color: var(--text-secondary);" v-if="backupPbsStorages.length === 0 && newBackupJob.source_node_id">
-                                Nessuno storage PBS trovato sul nodo. Inserisci manualmente.
-                            </small>
-                            <small style="color: var(--text-secondary);" v-else-if="!newBackupJob.source_node_id">
-                                Seleziona prima il nodo sorgente
-                            </small>
+                    </div>
+                    
+                    <!-- Sezione: Destinazione PBS -->
+                    <div class="modal-section">
+                        <h4 class="modal-section-title">📥 Destinazione PBS</h4>
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label required">Nodo PBS Destinazione</label>
+                                <select class="form-input" 
+                                        :class="{ invalid: getFieldError('backupJob_pbs_node_id') }"
+                                        v-model="newBackupJob.pbs_node_id" 
+                                        @change="clearFieldError('backupJob_pbs_node_id')">
+                                    <option value="">-- Seleziona PBS --</option>
+                                    <option v-for="node in pbsNodes" :key="node.id" :value="node.id">{{ node.name }} ({{ node.hostname }})</option>
+                                </select>
+                                <span class="form-error" v-if="getFieldError('backupJob_pbs_node_id')">{{ getFieldError('backupJob_pbs_node_id') }}</span>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Storage PBS (sul nodo sorgente)</label>
+                                <select class="form-input" v-model="newBackupJob.pbs_storage_id" v-if="backupPbsStorages.length > 0">
+                                    <option value="">-- Seleziona Storage PBS --</option>
+                                    <option v-for="st in backupPbsStorages" :key="st.storage" :value="st.storage">
+                                        {{ st.storage }} ({{ st.server || 'PBS' }})
+                                    </option>
+                                </select>
+                                <input type="text" class="form-input" v-model="newBackupJob.pbs_storage_id" placeholder="es: pbs-backup" v-else>
+                                <small class="form-help" v-if="backupPbsStorages.length === 0 && newBackupJob.source_node_id">
+                                    Nessuno storage PBS trovato sul nodo. Inserisci manualmente.
+                                </small>
+                                <small class="form-help" v-else-if="!newBackupJob.source_node_id">
+                                    Seleziona prima il nodo sorgente
+                                </small>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">Modalità Backup</label>
-                            <select class="form-input" v-model="newBackupJob.backup_mode">
-                                <option value="snapshot">Snapshot (Live)</option>
-                                <option value="stop">Stop (Arresto VM)</option>
-                                <option value="suspend">Suspend</option>
-                            </select>
+                    </div>
+                    
+                    <!-- Sezione: Opzioni Backup -->
+                    <div class="modal-section">
+                        <h4 class="modal-section-title">⚙️ Opzioni Backup</h4>
+                        <div class="grid-3">
+                            <div class="form-group">
+                                <label class="form-label">Modalità Backup</label>
+                                <select class="form-input" v-model="newBackupJob.backup_mode">
+                                    <option value="snapshot">Snapshot (Live)</option>
+                                    <option value="stop">Stop (Arresto VM)</option>
+                                    <option value="suspend">Suspend</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Compressione</label>
+                                <select class="form-input" v-model="newBackupJob.backup_compress">
+                                    <option value="zstd">ZSTD (Consigliato)</option>
+                                    <option value="lzo">LZO (Veloce)</option>
+                                    <option value="gzip">GZIP</option>
+                                    <option value="none">Nessuna</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Mantieni ultimi N backup</label>
+                                <input type="number" class="form-input" v-model="newBackupJob.keep_last" min="1" max="100">
+                            </div>
                         </div>
+                    </div>
+                    
+                    <!-- Sezione: Schedulazione -->
+                    <div class="modal-section">
+                        <h4 class="modal-section-title">⏰ Schedulazione</h4>
                         <div class="form-group">
                             <label class="form-label">Schedule</label>
                             <select class="form-input" v-model="newBackupJob.schedulePreset" @change="onSchedulePresetChange(newBackupJob)">
@@ -2509,43 +2758,43 @@
                                     {{ preset.label }}
                                 </option>
                             </select>
-                            <input v-if="newBackupJob.schedulePreset === 'custom'" type="text" class="form-input" v-model="newBackupJob.schedule" placeholder="es: 0 2 * * * (cron)" style="margin-top: 8px;">
+                            <input v-if="newBackupJob.schedulePreset === 'custom'" 
+                                   type="text" 
+                                   class="form-input" 
+                                   :class="{ invalid: getFieldError('backupJob_schedule') }"
+                                   v-model="newBackupJob.schedule" 
+                                   @input="clearFieldError('backupJob_schedule')"
+                                   placeholder="es: 0 2 * * * (cron)" 
+                                   style="margin-top: 8px;">
+                            <span class="form-error" v-if="getFieldError('backupJob_schedule')">{{ getFieldError('backupJob_schedule') }}</span>
                         </div>
                     </div>
-                    <div class="grid-3">
-                        <div class="form-group">
-                            <label class="form-label">Mantieni ultimi N backup</label>
-                            <input type="number" class="form-input" v-model="newBackupJob.keep_last" min="1" max="100">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Compressione</label>
-                            <select class="form-input" v-model="newBackupJob.backup_compress">
-                                <option value="zstd">ZSTD (Consigliato)</option>
-                                <option value="lzo">LZO (Veloce)</option>
-                                <option value="gzip">GZIP</option>
-                                <option value="none">Nessuna</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Soggetto Email</label>
-                            <input type="text" class="form-input" v-model="newBackupJob.notify_subject" placeholder="[BACKUP] {vm_name}">
+                    
+                    <!-- Sezione: Notifiche -->
+                    <div class="modal-section">
+                        <h4 class="modal-section-title">📧 Notifiche</h4>
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label">Notifiche Email</label>
+                                <select class="form-input" v-model="newBackupJob.notify_mode">
+                                    <option value="daily">📅 Solo nel riepilogo giornaliero</option>
+                                    <option value="always">📨 Ad ogni esecuzione</option>
+                                    <option value="failure">⚠️ Solo in caso di errore</option>
+                                    <option value="never">🔕 Disabilitate</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Soggetto Email</label>
+                                <input type="text" class="form-input" v-model="newBackupJob.notify_subject" placeholder="[BACKUP] {vm_name}">
+                            </div>
                         </div>
                     </div>
-                    <div class="grid-2">
-                        <div class="form-group">
-                            <label class="form-label">Notifiche Email</label>
-                            <select class="form-input" v-model="newBackupJob.notify_mode">
-                                <option value="daily">📅 Solo nel riepilogo giornaliero</option>
-                                <option value="always">📨 Ad ogni esecuzione</option>
-                                <option value="failure">⚠️ Solo in caso di errore</option>
-                                <option value="never">🔕 Disabilitate</option>
-                            </select>
-                        </div>
-                        <div class="form-group" style="display: flex; align-items: flex-end;">
-                            <button class="btn btn-primary" @click="createBackupJob" :disabled="!newBackupJob.name || !newBackupJob.source_node_id || !newBackupJob.vm_id || !newBackupJob.pbs_node_id">
-                                ➕ Crea Backup Job
-                            </button>
-                        </div>
+                    
+                    <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+                        <button class="btn btn-primary" @click="createBackupJob" :disabled="loading || !isBackupJobFormValid">
+                            <span v-if="loading" class="spinner"></span>
+                            <span v-else>➕ Crea Backup Job</span>
+                        </button>
                     </div>
                 </div>
                 
@@ -2615,40 +2864,57 @@
             
             <!-- Edit Backup Job Modal -->
             <div class="modal-overlay" v-if="showEditBackupJobModal && editingBackupJob" @click.self="showEditBackupJobModal = false">
-                <div class="modal" style="max-width: 500px;">
+                <div class="modal modal-unified">
                     <div class="modal-header">
                         <h3 class="modal-title">✏️ Modifica Backup Job</h3>
                         <button class="btn btn-icon btn-secondary" @click="showEditBackupJobModal = false">✕</button>
                     </div>
                     <div class="modal-body">
-                        <div class="form-group">
-                            <label class="form-label">Nome Job</label>
-                            <input type="text" class="form-input" v-model="editingBackupJob.name">
-                        </div>
-                        <div class="grid-2">
+                        <!-- Sezione: Informazioni Base -->
+                        <div class="modal-section">
+                            <h4 class="modal-section-title">📋 Informazioni Base</h4>
                             <div class="form-group">
-                                <label class="form-label">Modalità</label>
-                                <select class="form-input" v-model="editingBackupJob.backup_mode">
-                                    <option value="snapshot">Snapshot</option>
-                                    <option value="stop">Stop</option>
-                                    <option value="suspend">Suspend</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Compressione</label>
-                                <select class="form-input" v-model="editingBackupJob.backup_compress">
-                                    <option value="zstd">ZSTD</option>
-                                    <option value="lzo">LZO</option>
-                                    <option value="gzip">GZIP</option>
-                                    <option value="none">Nessuna</option>
-                                </select>
+                                <label class="form-label required">Nome Job</label>
+                                <input type="text" 
+                                       class="form-input" 
+                                       :class="{ invalid: getFieldError('backupJobEdit_name') }"
+                                       v-model="editingBackupJob.name" 
+                                       @input="clearFieldError('backupJobEdit_name')">
+                                <span class="form-error" v-if="getFieldError('backupJobEdit_name')">{{ getFieldError('backupJobEdit_name') }}</span>
                             </div>
                         </div>
-                        <div class="grid-2">
+                        
+                        <!-- Sezione: Opzioni Backup -->
+                        <div class="modal-section">
+                            <h4 class="modal-section-title">⚙️ Opzioni Backup</h4>
+                            <div class="grid-2">
+                                <div class="form-group">
+                                    <label class="form-label">Modalità</label>
+                                    <select class="form-input" v-model="editingBackupJob.backup_mode">
+                                        <option value="snapshot">Snapshot</option>
+                                        <option value="stop">Stop</option>
+                                        <option value="suspend">Suspend</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Compressione</label>
+                                    <select class="form-input" v-model="editingBackupJob.backup_compress">
+                                        <option value="zstd">ZSTD</option>
+                                        <option value="lzo">LZO</option>
+                                        <option value="gzip">GZIP</option>
+                                        <option value="none">Nessuna</option>
+                                    </select>
+                                </div>
+                            </div>
                             <div class="form-group">
-                                <label class="form-label">Mantieni ultimi N</label>
+                                <label class="form-label">Mantieni ultimi N backup</label>
                                 <input type="number" class="form-input" v-model="editingBackupJob.keep_last" min="1">
                             </div>
+                        </div>
+                        
+                        <!-- Sezione: Schedulazione -->
+                        <div class="modal-section">
+                            <h4 class="modal-section-title">⏰ Schedulazione</h4>
                             <div class="form-group">
                                 <label class="form-label">Schedule</label>
                                 <select class="form-input" v-model="editingBackupJob.schedulePreset" @change="onSchedulePresetChange(editingBackupJob)">
@@ -2656,36 +2922,49 @@
                                         {{ preset.label }}
                                     </option>
                                 </select>
-                                <input v-if="editingBackupJob.schedulePreset === 'custom'" type="text" class="form-input" v-model="editingBackupJob.schedule" placeholder="cron" style="margin-top: 8px;">
+                                <input v-if="editingBackupJob.schedulePreset === 'custom'" 
+                                       type="text" 
+                                       class="form-input" 
+                                       :class="{ invalid: getFieldError('backupJobEdit_schedule') }"
+                                       v-model="editingBackupJob.schedule" 
+                                       @input="clearFieldError('backupJobEdit_schedule')"
+                                       placeholder="cron" 
+                                       style="margin-top: 8px;">
+                                <span class="form-error" v-if="getFieldError('backupJobEdit_schedule')">{{ getFieldError('backupJobEdit_schedule') }}</span>
                             </div>
                         </div>
-                        <div class="grid-2">
-                            <div class="form-group">
-                                <label class="form-label">📧 Notifiche Email</label>
-                                <select class="form-input" v-model="editingBackupJob.notify_mode">
-                                    <option value="daily">📅 Solo nel riepilogo giornaliero</option>
-                                    <option value="always">📨 Ad ogni esecuzione</option>
-                                    <option value="failure">⚠️ Solo in caso di errore</option>
-                                    <option value="never">🔕 Disabilitate</option>
-                                </select>
+                        
+                        <!-- Sezione: Notifiche -->
+                        <div class="modal-section">
+                            <h4 class="modal-section-title">📧 Notifiche</h4>
+                            <div class="grid-2">
+                                <div class="form-group">
+                                    <label class="form-label">Notifiche Email</label>
+                                    <select class="form-input" v-model="editingBackupJob.notify_mode">
+                                        <option value="daily">📅 Solo nel riepilogo giornaliero</option>
+                                        <option value="always">📨 Ad ogni esecuzione</option>
+                                        <option value="failure">⚠️ Solo in caso di errore</option>
+                                        <option value="never">🔕 Disabilitate</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Soggetto Email</label>
+                                    <input type="text" class="form-input" v-model="editingBackupJob.notify_subject" placeholder="[BACKUP] {vm_name}">
+                                </div>
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Soggetto Email</label>
-                                <input type="text" class="form-input" v-model="editingBackupJob.notify_subject" placeholder="[BACKUP] {vm_name}">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" v-model="editingBackupJob.is_active">
+                                    <span :style="{ color: editingBackupJob.is_active ? 'var(--accent-primary)' : 'var(--text-secondary)' }">
+                                        {{ editingBackupJob.is_active ? '✅ Job Attivo' : '⏸️ Job Disattivato' }}
+                                    </span>
+                                </label>
                             </div>
-                        </div>
-                        <div class="form-group">
-                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                                <input type="checkbox" v-model="editingBackupJob.is_active">
-                                <span :style="{ color: editingBackupJob.is_active ? 'var(--accent-primary)' : 'var(--text-secondary)' }">
-                                    {{ editingBackupJob.is_active ? '✅ Job Attivo' : '⏸️ Job Disattivato' }}
-                                </span>
-                            </label>
                         </div>
                     </div>
                     <div class="modal-footer">
                         <button class="btn btn-secondary" @click="showEditBackupJobModal = false">Annulla</button>
-                        <button class="btn btn-primary" @click="saveBackupJob">💾 Salva</button>
+                        <button class="btn btn-primary" @click="saveBackupJob" :disabled="loading || !isBackupJobEditFormValid">💾 Salva</button>
                     </div>
                 </div>
             </div>
@@ -4095,52 +4374,82 @@
                         </div>
                         
                         <div v-if="notifSettings.smtp_enabled">
-                            <h4 style="color: var(--accent-primary); margin: 20px 0 12px;">📧 Configurazione Server SMTP</h4>
-                            <div class="grid-2">
-                                <div class="form-group">
-                                    <label class="form-label">Server SMTP</label>
-                                    <input type="text" class="form-input" v-model="notifSettings.smtp_host" placeholder="smtp.gmail.com">
+                            <!-- Sezione: Configurazione Server SMTP -->
+                            <div class="modal-section">
+                                <h4 class="modal-section-title">📧 Configurazione Server SMTP</h4>
+                                <div class="grid-2">
+                                    <div class="form-group">
+                                        <label class="form-label">Server SMTP</label>
+                                        <input type="text" 
+                                               class="form-input" 
+                                               :class="{ invalid: getFieldError('smtp_host') }"
+                                               v-model="notifSettings.smtp_host" 
+                                               @input="clearFieldError('smtp_host')"
+                                               placeholder="smtp.gmail.com">
+                                        <span class="form-error" v-if="getFieldError('smtp_host')">{{ getFieldError('smtp_host') }}</span>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Porta</label>
+                                        <input type="number" 
+                                               class="form-input" 
+                                               :class="{ invalid: getFieldError('smtp_port') }"
+                                               v-model.number="notifSettings.smtp_port" 
+                                               @input="clearFieldError('smtp_port')"
+                                               placeholder="587">
+                                        <span class="form-error" v-if="getFieldError('smtp_port')">{{ getFieldError('smtp_port') }}</span>
+                                    </div>
+                                </div>
+                                <div class="grid-2">
+                                    <div class="form-group">
+                                        <label class="form-label">Username SMTP</label>
+                                        <input type="text" class="form-input" v-model="notifSettings.smtp_user" placeholder="user@example.com">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Password SMTP</label>
+                                        <input type="password" class="form-input" v-model="notifSettings.smtp_password" placeholder="••••••••">
+                                    </div>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Porta</label>
-                                    <input type="number" class="form-input" v-model.number="notifSettings.smtp_port" placeholder="587">
+                                    <label class="form-label"><input type="checkbox" v-model="notifSettings.smtp_tls"> Usa TLS (STARTTLS)</label>
+                                    <small class="form-help">
+                                        • Porta 25: disabilita TLS (nessuna cifratura)<br>
+                                        • Porta 465: SSL automatico (ignora checkbox)<br>
+                                        • Porta 587: abilita TLS (STARTTLS)
+                                    </small>
                                 </div>
-                            </div>
-                            <div class="grid-2">
-                                <div class="form-group">
-                                    <label class="form-label">Username SMTP</label>
-                                    <input type="text" class="form-input" v-model="notifSettings.smtp_user" placeholder="user@example.com">
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Password SMTP</label>
-                                    <input type="password" class="form-input" v-model="notifSettings.smtp_password" placeholder="••••••••">
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label"><input type="checkbox" v-model="notifSettings.smtp_tls"> Usa TLS (STARTTLS)</label>
-                                <small style="color: var(--text-secondary); display: block; margin-top: 4px;">
-                                    • Porta 25: disabilita TLS (nessuna cifratura)<br>
-                                    • Porta 465: SSL automatico (ignora checkbox)<br>
-                                    • Porta 587: abilita TLS (STARTTLS)
-                                </small>
                             </div>
                             
-                            <h4 style="color: var(--accent-secondary); margin: 20px 0 12px;">📤 Mittente e Destinatari</h4>
-                            <div class="grid-2">
-                                <div class="form-group">
-                                    <label class="form-label">Email Mittente (From)</label>
-                                    <input type="email" class="form-input" v-model="notifSettings.smtp_from" placeholder="sanoid@example.com">
+                            <!-- Sezione: Mittente e Destinatari -->
+                            <div class="modal-section">
+                                <h4 class="modal-section-title">📤 Mittente e Destinatari</h4>
+                                <div class="grid-2">
+                                    <div class="form-group">
+                                        <label class="form-label">Email Mittente (From)</label>
+                                        <input type="email" 
+                                               class="form-input" 
+                                               :class="{ invalid: getFieldError('smtp_from') }"
+                                               v-model="notifSettings.smtp_from" 
+                                               @input="clearFieldError('smtp_from')"
+                                               placeholder="sanoid@example.com">
+                                        <span class="form-error" v-if="getFieldError('smtp_from')">{{ getFieldError('smtp_from') }}</span>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Email Destinatari (To)</label>
+                                        <input type="text" 
+                                               class="form-input" 
+                                               :class="{ invalid: getFieldError('smtp_to') }"
+                                               v-model="notifSettings.smtp_to" 
+                                               @input="clearFieldError('smtp_to')"
+                                               placeholder="admin@example.com, team@example.com">
+                                        <span class="form-error" v-if="getFieldError('smtp_to')">{{ getFieldError('smtp_to') }}</span>
+                                        <small class="form-help">Separare più indirizzi con virgola</small>
+                                    </div>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Email Destinatari (To)</label>
-                                    <input type="text" class="form-input" v-model="notifSettings.smtp_to" placeholder="admin@example.com, team@example.com">
-                                    <small style="color: var(--text-secondary);">Separare più indirizzi con virgola</small>
+                                    <label class="form-label">Prefisso Oggetto Email</label>
+                                    <input type="text" class="form-input" v-model="notifSettings.smtp_subject_prefix" placeholder="[DAPX]">
+                                    <small class="form-help">Es: "[Backup Proxmox]" → "[Backup Proxmox] ✅ Replica Completata"</small>
                                 </div>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Prefisso Oggetto Email</label>
-                                <input type="text" class="form-input" v-model="notifSettings.smtp_subject_prefix" placeholder="[DAPX]">
-                                <small style="color: var(--text-secondary);">Es: "[Backup Proxmox]" → "[Backup Proxmox] ✅ Replica Completata"</small>
                             </div>
                             
                             <div style="margin-top: 16px;">
@@ -5156,46 +5465,77 @@
         </div>
         
         <div class="modal-overlay" v-if="isAuthenticated && showSyncJobModal" @click.self="showSyncJobModal = false">
-            <div class="modal" style="max-width: 700px;">
+            <div class="modal modal-unified-lg">
                 <div class="modal-header">
                     <h3 class="modal-title">{{ editingSyncJobId ? '✏️ Modifica Job Replica' : '➕ Nuovo Job Replica' }}</h3>
                     <button class="btn btn-icon" @click="showSyncJobModal = false">✕</button>
                 </div>
                 <div class="modal-body">
-                    <div class="form-group">
-                        <label class="form-label">Nome Job</label>
-                        <input type="text" class="form-input" v-model="newSyncJob.name" placeholder="backup-vm-100">
+                    <!-- Sezione: Informazioni Base -->
+                    <div class="modal-section">
+                        <h4 class="modal-section-title">📋 Informazioni Base</h4>
+                        <div class="form-group">
+                            <label class="form-label required">Nome Job</label>
+                            <input type="text" 
+                                   class="form-input" 
+                                   :class="{ invalid: getFieldError('syncJob_name') }"
+                                   v-model="newSyncJob.name" 
+                                   @input="clearFieldError('syncJob_name')"
+                                   placeholder="backup-vm-100">
+                            <span class="form-error" v-if="getFieldError('syncJob_name')">{{ getFieldError('syncJob_name') }}</span>
+                        </div>
                     </div>
                     
-                    <div style="background: var(--bg-tertiary); padding: 16px; border-radius: 8px; margin-bottom: 16px;">
-                        <h4 style="margin-bottom: 12px; color: var(--accent-primary);">📤 Sorgente</h4>
-                    <div class="grid-2">
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label class="form-label">Nodo</label>
-                                <select class="form-input" v-model="newSyncJob.source_node_id" @change="loadSourceDatasets">
+                    <!-- Sezione: Sorgente -->
+                    <div class="modal-section">
+                        <h4 class="modal-section-title">📤 Sorgente</h4>
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label class="form-label required">Nodo</label>
+                                <select class="form-input" 
+                                        :class="{ invalid: getFieldError('syncJob_source_node_id') }"
+                                        v-model="newSyncJob.source_node_id" 
+                                        @change="loadSourceDatasets(); clearFieldError('syncJob_source_node_id')">
                                     <option value="">-- Seleziona nodo --</option>
                                     <option v-for="n in nodes" :key="n.id" :value="n.id">{{ n.name }} ({{ n.hostname }})</option>
-                            </select>
-                        </div>
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label class="form-label">Dataset</label>
-                                <select class="form-input" v-model="newSyncJob.source_dataset" @change="updateDestDataset" v-if="sourceDatasets.length > 0">
+                                </select>
+                                <span class="form-error" v-if="getFieldError('syncJob_source_node_id')">{{ getFieldError('syncJob_source_node_id') }}</span>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label required">Dataset</label>
+                                <select class="form-input" 
+                                        :class="{ invalid: getFieldError('syncJob_source_dataset') }"
+                                        v-model="newSyncJob.source_dataset" 
+                                        @change="updateDestDataset(); clearFieldError('syncJob_source_dataset')" 
+                                        v-if="sourceDatasets.length > 0">
                                     <option value="">-- Seleziona dataset --</option>
                                     <option v-for="ds in sourceDatasets" :key="ds.name" :value="ds.name">{{ ds.name }}</option>
-                            </select>
-                                <input type="text" class="form-input" v-model="newSyncJob.source_dataset" @input="updateDestDataset" placeholder="rpool/data/vm-100-disk-0" v-else>
+                                </select>
+                                <input type="text" 
+                                       class="form-input" 
+                                       :class="{ invalid: getFieldError('syncJob_source_dataset') }"
+                                       v-model="newSyncJob.source_dataset" 
+                                       @input="updateDestDataset(); clearFieldError('syncJob_source_dataset')" 
+                                       placeholder="rpool/data/vm-100-disk-0" 
+                                       v-else>
+                                <span class="form-error" v-if="getFieldError('syncJob_source_dataset')">{{ getFieldError('syncJob_source_dataset') }}</span>
+                            </div>
                         </div>
                     </div>
-                        </div>
                     
-                    <div style="background: var(--bg-tertiary); padding: 16px; border-radius: 8px; margin-bottom: 16px;">
-                        <h4 style="margin-bottom: 12px; color: var(--accent-secondary);">📥 Destinazione</h4>
+                    <!-- Sezione: Destinazione -->
+                    <div class="modal-section">
+                        <h4 class="modal-section-title">📥 Destinazione</h4>
                         <div class="form-group">
-                            <label class="form-label">Nodo</label>
-                            <select class="form-input" v-model="newSyncJob.dest_node_id" @change="onDestNodeChange">
+                            <label class="form-label required">Nodo</label>
+                            <select class="form-input" 
+                                    :class="{ invalid: getFieldError('syncJob_dest_node_id') }"
+                                    v-model="newSyncJob.dest_node_id" 
+                                    @change="onDestNodeChange(); clearFieldError('syncJob_dest_node_id')">
                                 <option value="">-- Seleziona nodo --</option>
                                 <option v-for="n in nodes" :key="n.id" :value="n.id">{{ n.name }} ({{ n.hostname }})</option>
                             </select>
+                            <span class="form-error" v-if="getFieldError('syncJob_dest_node_id')">{{ getFieldError('syncJob_dest_node_id') }}</span>
                         </div>
                         <div class="form-group" v-if="newSyncJob.dest_node_id">
                             <label class="form-label">Pool/Root Destinazione</label>
@@ -5206,26 +5546,30 @@
                                 </select>
                                 <input type="text" class="form-input" v-model="destSubPath" @input="updateDestDataset" 
                                        placeholder="replica" style="flex: 1;">
-                    </div>
-                            <small style="color: var(--text-secondary);">Pool + sottocartella (es: replica, backup)</small>
-                    </div>
-                        <div class="form-group" style="margin-bottom: 0;" v-if="newSyncJob.dest_node_id">
-                            <label class="form-label">Dataset Destinazione Finale</label>
-                            <input type="text" class="form-input" v-model="newSyncJob.dest_dataset" 
+                            </div>
+                            <small class="form-help">Pool + sottocartella (es: replica, backup)</small>
+                        </div>
+                        <div class="form-group" v-if="newSyncJob.dest_node_id">
+                            <label class="form-label required">Dataset Destinazione Finale</label>
+                            <input type="text" 
+                                   class="form-input" 
+                                   :class="{ invalid: getFieldError('syncJob_dest_dataset') }"
+                                   v-model="newSyncJob.dest_dataset" 
+                                   @input="clearFieldError('syncJob_dest_dataset')"
                                    placeholder="ZFS/replica/vm-202-disk-0"
                                    style="font-family: 'JetBrains Mono', monospace; background: var(--bg-primary);">
-                            <small v-if="newSyncJob.source_dataset && suggestedDestDataset" style="color: var(--accent-primary); cursor: pointer;" @click="newSyncJob.dest_dataset = suggestedDestDataset">
+                            <span class="form-error" v-if="getFieldError('syncJob_dest_dataset')">{{ getFieldError('syncJob_dest_dataset') }}</span>
+                            <small v-if="newSyncJob.source_dataset && suggestedDestDataset" style="color: var(--accent-primary); cursor: pointer; display: block; margin-top: 4px;" @click="newSyncJob.dest_dataset = suggestedDestDataset">
                                 💡 Clicca per usare: <strong>{{ suggestedDestDataset }}</strong>
                             </small>
                         </div>
                     </div>
                     
                     <!-- Compatibility Warnings -->
-                    <div v-if="syncJobCompatibility.loading" style="padding: 12px; text-align: center; color: var(--text-secondary);">
+                    <div v-if="syncJobCompatibility.loading" class="modal-section" style="text-align: center;">
                         <span class="spinner" style="margin-right: 8px;"></span> Verifica compatibilità...
                     </div>
-                    <div v-else-if="syncJobCompatibility.warnings && syncJobCompatibility.warnings.length > 0" 
-                         style="margin: 16px 0; padding: 12px; border-radius: 8px; background: var(--bg-primary); border: 1px solid var(--border-color);">
+                    <div v-else-if="syncJobCompatibility.warnings && syncJobCompatibility.warnings.length > 0" class="modal-section" style="background: var(--bg-primary); border-color: var(--accent-warning);">
                         <h5 style="margin: 0 0 8px 0; color: var(--accent-warning);">⚠️ Avvisi Compatibilità</h5>
                         <div v-for="(warn, idx) in syncJobCompatibility.warnings" :key="idx" 
                              :style="{
@@ -5242,7 +5586,9 @@
                         </div>
                     </div>
                     
-                    <div class="grid-2">
+                    <!-- Sezione: Schedulazione e Opzioni -->
+                    <div class="modal-section">
+                        <h4 class="modal-section-title">⏰ Schedulazione</h4>
                         <div class="form-group">
                             <label class="form-label">Schedule</label>
                             <select class="form-input" v-model="newSyncJob.schedulePreset" @change="onSchedulePresetChange(newSyncJob)">
@@ -5250,98 +5596,119 @@
                                     {{ preset.label }}
                                 </option>
                             </select>
-                            <input v-if="newSyncJob.schedulePreset === 'custom'" type="text" class="form-input" v-model="newSyncJob.schedule" placeholder="es: 0 2 * * *" style="margin-top: 8px;">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Compressione</label>
-                            <select class="form-input" v-model="newSyncJob.compress">
-                                <option value="none">Nessuna</option>
-                                <option value="lz4">LZ4 (veloce)</option>
-                                <option value="gzip">Gzip (bilanciato)</option>
-                                <option value="zstd">Zstd (efficiente)</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">📸 Versioni da mantenere</label>
-                            <input type="number" class="form-input" v-model.number="newSyncJob.keep_snapshots" min="0" max="100" placeholder="0">
-                            <small style="color: var(--text-secondary);">0 = solo ultima, N = mantieni ultime N snapshot</small>
+                            <input v-if="newSyncJob.schedulePreset === 'custom'" 
+                                   type="text" 
+                                   class="form-input" 
+                                   :class="{ invalid: getFieldError('syncJob_schedule') }"
+                                   v-model="newSyncJob.schedule" 
+                                   @input="clearFieldError('syncJob_schedule')"
+                                   placeholder="es: 0 2 * * *" 
+                                   style="margin-top: 8px;">
+                            <span class="form-error" v-if="getFieldError('syncJob_schedule')">{{ getFieldError('syncJob_schedule') }}</span>
                         </div>
                     </div>
                     
-                    <div class="grid-2">
-                        <div class="form-group">
-                            <label class="form-label">📧 Notifiche Email</label>
-                            <select class="form-input" v-model="newSyncJob.notify_mode">
-                                <option value="daily">📅 Solo nel riepilogo giornaliero</option>
-                                <option value="always">📨 Ad ogni esecuzione</option>
-                                <option value="failure">⚠️ Solo in caso di errore</option>
-                                <option value="never">🔕 Disabilitate</option>
-                            </select>
+                    <!-- Sezione: Opzioni Avanzate -->
+                    <div class="collapsible-section">
+                        <div class="collapsible-header" @click="syncJobAdvancedExpanded = !syncJobAdvancedExpanded">
+                            <h4>⚙️ Opzioni Avanzate</h4>
+                            <span>{{ syncJobAdvancedExpanded ? '▼' : '▶' }}</span>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">Soggetto Email</label>
-                            <input type="text" class="form-input" v-model="newSyncJob.notify_subject" placeholder="[REPLICA ZFS] {vm_name}">
-                        </div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">
-                            <input type="checkbox" v-model="newSyncJob.recursive"> Ricorsivo (include sotto-dataset)
-                        </label>
-                    </div>
-                    
-                    <hr style="border-color: var(--border-color); margin: 20px 0;">
-                    
-                    <div class="form-group">
-                        <label class="form-label">
-                            <input type="checkbox" v-model="newSyncJob.register_vm"> 🖥️ Registra VM dopo replica
-                        </label>
-                        <small style="color: var(--text-secondary); display: block;">La VM verrà registrata sul nodo destinazione in stato spento</small>
-                    </div>
-                    
-                    <div v-if="newSyncJob.register_vm" style="background: rgba(0, 212, 255, 0.1); padding: 16px; border-radius: 8px; border: 1px solid var(--accent-secondary);">
-                        <div class="grid-3">
-                            <div class="form-group" style="margin-bottom: 8px;">
-                                <label class="form-label">VMID Sorgente</label>
-                                <input type="number" class="form-input" v-model="newSyncJob.vm_id" placeholder="100">
+                        <div class="collapsible-content" v-if="syncJobAdvancedExpanded">
+                            <div class="grid-2">
+                                <div class="form-group">
+                                    <label class="form-label">Compressione</label>
+                                    <select class="form-input" v-model="newSyncJob.compress">
+                                        <option value="none">Nessuna</option>
+                                        <option value="lz4">LZ4 (veloce)</option>
+                                        <option value="gzip">Gzip (bilanciato)</option>
+                                        <option value="zstd">Zstd (efficiente)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">📸 Versioni da mantenere</label>
+                                    <input type="number" class="form-input" v-model.number="newSyncJob.keep_snapshots" min="0" max="100" placeholder="0">
+                                    <small class="form-help">0 = solo ultima, N = mantieni ultime N snapshot</small>
+                                </div>
                             </div>
-                            <div class="form-group" style="margin-bottom: 8px;">
-                                <label class="form-label">VMID Destinazione <small style="color: var(--text-secondary);">(opz.)</small></label>
-                                <input type="number" class="form-input" v-model="newSyncJob.dest_vm_id" :placeholder="newSyncJob.vm_id || '100'">
-                            </div>
-                            <div class="form-group" style="margin-bottom: 8px;">
-                                <label class="form-label">Suffisso Nome VM</label>
-                                <input type="text" class="form-input" v-model="newSyncJob.dest_vm_name_suffix" placeholder="-replica">
-                            </div>
-                        </div>
-                        <div class="grid-2">
-                            <div class="form-group" style="margin-bottom: 8px;">
-                                <label class="form-label">Tipo VM</label>
-                                <select class="form-input" v-model="newSyncJob.vm_type">
-                                    <option value="qemu">QEMU/KVM</option>
-                                    <option value="lxc">LXC Container</option>
-                                </select>
-                            </div>
-                            <div class="form-group" style="margin-bottom: 8px;">
-                                <label class="form-label" style="display: flex; align-items: center; gap: 8px;">
-                                    <input type="checkbox" v-model="newSyncJob.force_cpu_host">
-                                    💻 Forza CPU "host"
+                            
+                            <div class="form-group">
+                                <label class="form-label">
+                                    <input type="checkbox" v-model="newSyncJob.recursive"> Ricorsivo (include sotto-dataset)
                                 </label>
-                                <small style="color: var(--text-secondary); display: block; margin-top: 4px;">
-                                    Risolve incompatibilità CPU tra nodi diversi
-                                </small>
+                            </div>
+                            
+                            <div class="grid-2">
+                                <div class="form-group">
+                                    <label class="form-label">📧 Notifiche Email</label>
+                                    <select class="form-input" v-model="newSyncJob.notify_mode">
+                                        <option value="daily">📅 Solo nel riepilogo giornaliero</option>
+                                        <option value="always">📨 Ad ogni esecuzione</option>
+                                        <option value="failure">⚠️ Solo in caso di errore</option>
+                                        <option value="never">🔕 Disabilitate</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Soggetto Email</label>
+                                    <input type="text" class="form-input" v-model="newSyncJob.notify_subject" placeholder="[REPLICA ZFS] {vm_name}">
+                                </div>
                             </div>
                         </div>
-                        <small style="color: var(--text-secondary); display: block; margin-top: 8px;">
-                            💡 Il suffisso verrà aggiunto al nome della VM (es: web01 → web01-replica)
-                        </small>
+                    </div>
+                    
+                    <!-- Sezione: Registrazione VM -->
+                    <div class="modal-section">
+                        <div class="form-group">
+                            <label class="form-label">
+                                <input type="checkbox" v-model="newSyncJob.register_vm"> 🖥️ Registra VM dopo replica
+                            </label>
+                            <small class="form-help">La VM verrà registrata sul nodo destinazione in stato spento</small>
+                        </div>
+                        
+                        <div v-if="newSyncJob.register_vm" style="background: rgba(0, 212, 255, 0.1); padding: 16px; border-radius: 8px; border: 1px solid var(--accent-secondary); margin-top: 12px;">
+                            <div class="grid-3">
+                                <div class="form-group">
+                                    <label class="form-label">VMID Sorgente</label>
+                                    <input type="number" class="form-input" v-model="newSyncJob.vm_id" placeholder="100">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">VMID Destinazione <small style="color: var(--text-secondary);">(opz.)</small></label>
+                                    <input type="number" class="form-input" v-model="newSyncJob.dest_vm_id" :placeholder="newSyncJob.vm_id || '100'">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Suffisso Nome VM</label>
+                                    <input type="text" class="form-input" v-model="newSyncJob.dest_vm_name_suffix" placeholder="-replica">
+                                </div>
+                            </div>
+                            <div class="grid-2">
+                                <div class="form-group">
+                                    <label class="form-label">Tipo VM</label>
+                                    <select class="form-input" v-model="newSyncJob.vm_type">
+                                        <option value="qemu">QEMU/KVM</option>
+                                        <option value="lxc">LXC Container</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" style="display: flex; align-items: center; gap: 8px;">
+                                        <input type="checkbox" v-model="newSyncJob.force_cpu_host">
+                                        💻 Forza CPU "host"
+                                    </label>
+                                    <small class="form-help">
+                                        Risolve incompatibilità CPU tra nodi diversi
+                                    </small>
+                                </div>
+                            </div>
+                            <small class="form-help" style="display: block; margin-top: 8px;">
+                                💡 Il suffisso verrà aggiunto al nome della VM (es: web01 → web01-replica)
+                            </small>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" @click="showSyncJobModal = false">Annulla</button>
-                    <button class="btn btn-primary" @click="createSyncJob" :disabled="loading">
+                    <button class="btn btn-primary" @click="createSyncJob" :disabled="loading || !isSyncJobFormValid">
                         <span v-if="loading" class="spinner"></span>
-                        <span v-else>Crea Job</span>
+                        <span v-else>{{ editingSyncJobId ? 'Salva Modifiche' : 'Crea Job' }}</span>
                     </button>
                 </div>
             </div>
@@ -6033,7 +6400,19 @@
         
         <!-- Toast -->
         <div class="toast-container">
-            <div v-for="toast in toasts" :key="toast.id" class="toast" :class="'toast-' + toast.type">{{ toast.message }}</div>
+            <div v-for="toast in toasts" 
+                 :key="toast.id" 
+                 class="toast" 
+                 :class="'toast-' + toast.type">
+                <span class="toast-icon">
+                    <span v-if="toast.type === 'success'">✅</span>
+                    <span v-else-if="toast.type === 'error'">❌</span>
+                    <span v-else-if="toast.type === 'warning'">⚠️</span>
+                    <span v-else>ℹ️</span>
+                </span>
+                <span class="toast-message">{{ toast.message }}</span>
+                <button class="toast-close" @click="toasts = toasts.filter(t => t.id !== toast.id)">×</button>
+            </div>
         </div>
     </div>
     
@@ -6176,6 +6555,7 @@
                 const editingNode = ref(null);
                 const showSyncJobModal = ref(false);
                 const editingSyncJobId = ref(null);
+                const syncJobAdvancedExpanded = ref(false);
                 
                 // Sync Job Snapshot management
                 const showSyncSnapshotModal = ref(false);
@@ -6392,6 +6772,139 @@
                     return sortedGroups;
                 });
                 
+                // ============== Sistema di Validazione Centralizzato ==============
+                const validators = {
+                    required: (v, label) => {
+                        if (v === null || v === undefined || v === '') return `${label} è obbligatorio`;
+                        if (typeof v === 'string' && v.trim() === '') return `${label} è obbligatorio`;
+                        return null;
+                    },
+                    minLength: (v, min, label) => {
+                        if (!v) return null; // Se vuoto, required lo gestisce
+                        if (v.length < min) return `${label} deve avere almeno ${min} caratteri`;
+                        return null;
+                    },
+                    maxLength: (v, max, label) => {
+                        if (!v) return null;
+                        if (v.length > max) return `${label} non può superare ${max} caratteri`;
+                        return null;
+                    },
+                    isIP: (v) => {
+                        if (!v) return null;
+                        const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+                        if (!ipRegex.test(v)) return 'IP non valido';
+                        const parts = v.split('.');
+                        for (const part of parts) {
+                            const num = parseInt(part);
+                            if (num < 0 || num > 255) return 'IP non valido';
+                        }
+                        return null;
+                    },
+                    isHostname: (v) => {
+                        if (!v) return null;
+                        const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+                        if (!hostnameRegex.test(v) && !/^(\d{1,3}\.){3}\d{1,3}$/.test(v)) return 'Hostname non valido';
+                        return null;
+                    },
+                    isPort: (v) => {
+                        if (!v) return null;
+                        const port = parseInt(v);
+                        if (isNaN(port) || port < 1 || port > 65535) return 'Porta deve essere un numero tra 1 e 65535';
+                        return null;
+                    },
+                    isCron: (v) => {
+                        if (!v) return null; // Cron opzionale
+                        // Validazione base cron (5 campi separati da spazi)
+                        const cronParts = v.trim().split(/\s+/);
+                        if (cronParts.length !== 5) return 'Formato cron non valido (deve avere 5 campi)';
+                        return null;
+                    },
+                    isEmail: (v) => {
+                        if (!v) return null;
+                        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                        if (!emailRegex.test(v)) return 'Email non valida';
+                        return null;
+                    },
+                    isNumeric: (v, label) => {
+                        if (!v) return null;
+                        if (isNaN(v) || isNaN(parseFloat(v))) return `${label} deve essere un numero`;
+                        return null;
+                    },
+                    isPositive: (v, label) => {
+                        if (!v) return null;
+                        const num = parseFloat(v);
+                        if (isNaN(num) || num <= 0) return `${label} deve essere un numero positivo`;
+                        return null;
+                    }
+                };
+                
+                // Errori per form attivi
+                const formErrors = ref({});
+                
+                // Funzione per validare un campo singolo
+                const validateField = (value, rules, label) => {
+                    if (!rules || rules.length === 0) return null;
+                    for (const rule of rules) {
+                        if (typeof rule === 'function') {
+                            const error = rule(value, label);
+                            if (error) return error;
+                        } else if (typeof rule === 'string') {
+                            const validator = validators[rule];
+                            if (validator) {
+                                const error = validator(value, label);
+                                if (error) return error;
+                            }
+                        } else if (Array.isArray(rule)) {
+                            const [validatorName, ...args] = rule;
+                            const validator = validators[validatorName];
+                            if (validator) {
+                                const error = validator(value, ...args, label);
+                                if (error) return error;
+                            }
+                        }
+                    }
+                    return null;
+                };
+                
+                // Funzione per validare un intero form
+                const validateForm = (formData, fieldRules) => {
+                    const errors = {};
+                    let isValid = true;
+                    
+                    for (const [field, rules] of Object.entries(fieldRules)) {
+                        const value = formData[field];
+                        const label = rules.label || field;
+                        const validationRules = rules.rules || rules;
+                        
+                        const error = validateField(value, validationRules, label);
+                        if (error) {
+                            errors[field] = error;
+                            isValid = false;
+                        }
+                    }
+                    
+                    formErrors.value = errors;
+                    return { isValid, errors };
+                };
+                
+                // Funzione per pulire errori di un campo
+                const clearFieldError = (field) => {
+                    if (formErrors.value[field]) {
+                        delete formErrors.value[field];
+                    }
+                };
+                
+                // Funzione per ottenere errore di un campo
+                const getFieldError = (field) => {
+                    return formErrors.value[field] || null;
+                };
+                
+                // Funzione per verificare se un form è valido
+                const isFormValid = (formData, fieldRules) => {
+                    const result = validateForm(formData, fieldRules);
+                    return result.isValid;
+                };
+                
                 const toggleBackupGroup = (vmKey) => {
                     expandedBackupGroups.value[vmKey] = !expandedBackupGroups.value[vmKey];
                 };
@@ -6574,11 +7087,41 @@
                 const canEdit = computed(() => ['admin', 'operator'].includes(currentUser.value?.role));
                 
                 // Methods
-                const showToast = (message, type = 'success') => {
-                    const id = Date.now();
-                    toasts.value.push({ id, message, type });
-                    setTimeout(() => toasts.value = toasts.value.filter(t => t.id !== id), 3000);
+                // Sistema Toast/Notifiche Centralizzato
+                const showToast = (message, type = 'success', duration = null) => {
+                    const id = Date.now() + Math.random();
+                    const toastDuration = duration !== null ? duration : (type === 'error' ? 5000 : 3000);
+                    
+                    // Tipi supportati: success, error, warning, info
+                    const validTypes = ['success', 'error', 'warning', 'info'];
+                    const toastType = validTypes.includes(type) ? type : 'success';
+                    
+                    toasts.value.push({ 
+                        id, 
+                        message, 
+                        type: toastType,
+                        timestamp: new Date()
+                    });
+                    
+                    // Auto-dismiss dopo la durata specificata
+                    setTimeout(() => {
+                        const index = toasts.value.findIndex(t => t.id === id);
+                        if (index !== -1) {
+                            toasts.value.splice(index, 1);
+                        }
+                    }, toastDuration);
+                    
+                    // Limita numero massimo di toast visibili
+                    if (toasts.value.length > 5) {
+                        toasts.value.shift();
+                    }
                 };
+                
+                // Funzioni helper per tipi specifici
+                const showSuccess = (message, duration = null) => showToast(message, 'success', duration);
+                const showError = (message, duration = null) => showToast(message, 'error', duration);
+                const showWarning = (message, duration = null) => showToast(message, 'warning', duration);
+                const showInfo = (message, duration = null) => showToast(message, 'info', duration);
                 
                 const formatDate = d => d ? new Date(d).toLocaleString('it-IT') : '-';
                 
@@ -7078,13 +7621,65 @@
                     }
                 };
                 
+                // Validazione form Backup Job
+                const backupJobValidationRules = {
+                    backupJob_name: { label: 'Nome Job', rules: ['required', ['minLength', 3]] },
+                    backupJob_source_node_id: { label: 'Nodo sorgente', rules: ['required'] },
+                    backupJob_vm_id: { label: 'VM', rules: ['required', 'isNumeric'] },
+                    backupJob_pbs_node_id: { label: 'Nodo PBS', rules: ['required'] },
+                    backupJob_schedule: { label: 'Schedule', rules: ['isCron'] }
+                };
+                
+                const backupJobEditValidationRules = {
+                    backupJobEdit_name: { label: 'Nome Job', rules: ['required', ['minLength', 3]] },
+                    backupJobEdit_schedule: { label: 'Schedule', rules: ['isCron'] }
+                };
+                
+                const isBackupJobFormValid = computed(() => {
+                    const formData = {
+                        backupJob_name: newBackupJob.value.name,
+                        backupJob_source_node_id: newBackupJob.value.source_node_id,
+                        backupJob_vm_id: newBackupJob.value.vm_id,
+                        backupJob_pbs_node_id: newBackupJob.value.pbs_node_id,
+                        backupJob_schedule: newBackupJob.value.schedulePreset === 'custom' ? newBackupJob.value.schedule : ''
+                    };
+                    const result = validateForm(formData, backupJobValidationRules);
+                    return result.isValid;
+                });
+                
+                const isBackupJobEditFormValid = computed(() => {
+                    if (!editingBackupJob.value) return false;
+                    const formData = {
+                        backupJobEdit_name: editingBackupJob.value.name,
+                        backupJobEdit_schedule: editingBackupJob.value.schedulePreset === 'custom' ? editingBackupJob.value.schedule : ''
+                    };
+                    const result = validateForm(formData, backupJobEditValidationRules);
+                    return result.isValid;
+                });
+                
                 const createBackupJob = async () => {
+                    // Validazione form
+                    const formData = {
+                        backupJob_name: newBackupJob.value.name,
+                        backupJob_source_node_id: newBackupJob.value.source_node_id,
+                        backupJob_vm_id: newBackupJob.value.vm_id,
+                        backupJob_pbs_node_id: newBackupJob.value.pbs_node_id,
+                        backupJob_schedule: newBackupJob.value.schedulePreset === 'custom' ? newBackupJob.value.schedule : ''
+                    };
+                    
+                    const validation = validateForm(formData, backupJobValidationRules);
+                    if (!validation.isValid) {
+                        showToast('Correggi gli errori nel form', 'error');
+                        return;
+                    }
+                    
                     try {
                         const payload = { ...newBackupJob.value };
                         if (payload.schedule === '') payload.schedule = null;
                         await axios.post(`${API}/backup-jobs/`, payload);
                         showToast('Backup job creato!', 'success');
                         loadBackupJobs();
+                        formErrors.value = {};
                         newBackupJob.value = {
                             name: '', source_node_id: '', vm_id: '', vm_type: 'qemu', vm_name: '',
                             pbs_node_id: '', backup_mode: 'snapshot', backup_compress: 'zstd',
@@ -7124,10 +7719,23 @@
                         notify_mode: job.notify_mode || 'daily',
                         notify_subject: job.notify_subject || ''
                     };
+                    formErrors.value = {};
                     showEditBackupJobModal.value = true;
                 };
                 
                 const saveBackupJob = async () => {
+                    // Validazione form
+                    const formData = {
+                        backupJobEdit_name: editingBackupJob.value.name,
+                        backupJobEdit_schedule: editingBackupJob.value.schedulePreset === 'custom' ? editingBackupJob.value.schedule : ''
+                    };
+                    
+                    const validation = validateForm(formData, backupJobEditValidationRules);
+                    if (!validation.isValid) {
+                        showToast('Correggi gli errori nel form', 'error');
+                        return;
+                    }
+                    
                     try {
                         const payload = {
                             name: editingBackupJob.value.name,
@@ -7143,6 +7751,7 @@
                         showToast('Backup job aggiornato!', 'success');
                         showEditBackupJobModal.value = false;
                         editingBackupJob.value = null;
+                        formErrors.value = {};
                         loadBackupJobs();
                     } catch (e) {
                         showToast(e.response?.data?.detail || 'Errore aggiornamento', 'error');
@@ -8455,7 +9064,46 @@
                     loading.value = false;
                 };
                 
+                // Validazione form Sync Job
+                const syncJobValidationRules = {
+                    syncJob_name: { label: 'Nome Job', rules: ['required', ['minLength', 3]] },
+                    syncJob_source_node_id: { label: 'Nodo sorgente', rules: ['required'] },
+                    syncJob_source_dataset: { label: 'Dataset sorgente', rules: ['required'] },
+                    syncJob_dest_node_id: { label: 'Nodo destinazione', rules: ['required'] },
+                    syncJob_dest_dataset: { label: 'Dataset destinazione', rules: ['required'] },
+                    syncJob_schedule: { label: 'Schedule', rules: ['isCron'] }
+                };
+                
+                const isSyncJobFormValid = computed(() => {
+                    const formData = {
+                        syncJob_name: newSyncJob.value.name,
+                        syncJob_source_node_id: newSyncJob.value.source_node_id,
+                        syncJob_source_dataset: newSyncJob.value.source_dataset,
+                        syncJob_dest_node_id: newSyncJob.value.dest_node_id,
+                        syncJob_dest_dataset: newSyncJob.value.dest_dataset,
+                        syncJob_schedule: newSyncJob.value.schedulePreset === 'custom' ? newSyncJob.value.schedule : ''
+                    };
+                    const result = validateForm(formData, syncJobValidationRules);
+                    return result.isValid;
+                });
+                
                 const createSyncJob = async () => {
+                    // Validazione form
+                    const formData = {
+                        syncJob_name: newSyncJob.value.name,
+                        syncJob_source_node_id: newSyncJob.value.source_node_id,
+                        syncJob_source_dataset: newSyncJob.value.source_dataset,
+                        syncJob_dest_node_id: newSyncJob.value.dest_node_id,
+                        syncJob_dest_dataset: newSyncJob.value.dest_dataset,
+                        syncJob_schedule: newSyncJob.value.schedulePreset === 'custom' ? newSyncJob.value.schedule : ''
+                    };
+                    
+                    const validation = validateForm(formData, syncJobValidationRules);
+                    if (!validation.isValid) {
+                        showToast('Correggi gli errori nel form', 'error');
+                        return;
+                    }
+                    
                     loading.value = true;
                     try {
                         if (editingSyncJobId.value) {
@@ -8467,10 +9115,12 @@
                         }
                         showSyncJobModal.value = false;
                         editingSyncJobId.value = null;
+                        formErrors.value = {};
                         newSyncJob.value = { name: '', source_node_id: '', source_dataset: '', dest_node_id: '', dest_dataset: '', schedule: '', schedulePreset: '', compress: 'lz4', recursive: false, mbuffer_size: '128M', no_sync_snap: false, force_delete: false, extra_args: '', register_vm: false, vm_id: '', dest_vm_id: '', dest_vm_name_suffix: '', vm_type: 'qemu', notify_mode: 'daily', notify_subject: '', keep_snapshots: 0 };
                         sourceDatasets.value = [];
                         destDatasets.value = [];
                         selectedSchedule.value = '';
+                        syncJobAdvancedExpanded.value = false;
                         await loadSyncJobs();
                     } catch (e) { showToast(e.response?.data?.detail || 'Errore', 'error'); }
                     loading.value = false;
@@ -8547,6 +9197,8 @@
                     
                     await loadSourceDatasets();
                     await loadDestDatasets();
+                    formErrors.value = {};
+                    syncJobAdvancedExpanded.value = false;
                     showSyncJobModal.value = true;
                 };
                 
@@ -8690,9 +9342,49 @@
                     loading.value = false;
                 };
                 
+                // Validazione form Settings SMTP
+                const smtpValidationRules = {
+                    smtp_host: { label: 'Server SMTP', rules: ['isHostname'] },
+                    smtp_port: { label: 'Porta SMTP', rules: ['isPort'] },
+                    smtp_from: { label: 'Email mittente', rules: ['isEmail'] },
+                    smtp_to: { label: 'Email destinatari', rules: [(v) => {
+                        if (!v) return null;
+                        // Valida lista email separate da virgola
+                        const emails = v.split(',').map(e => e.trim());
+                        for (const email of emails) {
+                            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                                return 'Uno o più indirizzi email non validi';
+                            }
+                        }
+                        return null;
+                    }] }
+                };
+                
                 const saveNotifSettings = async () => {
+                    // Validazione solo se SMTP è abilitato
+                    if (notifSettings.value.smtp_enabled) {
+                        const formData = {
+                            smtp_host: notifSettings.value.smtp_host,
+                            smtp_port: notifSettings.value.smtp_port,
+                            smtp_from: notifSettings.value.smtp_from,
+                            smtp_to: notifSettings.value.smtp_to
+                        };
+                        
+                        const validation = validateForm(formData, smtpValidationRules);
+                        if (!validation.isValid) {
+                            showToast('Correggi gli errori nella configurazione SMTP', 'error');
+                            return;
+                        }
+                    }
+                    
                     loading.value = true;
-                    try { await axios.put(`${API}/settings/notifications`, notifSettings.value); showToast('Salvato'); } catch (e) { showToast('Errore', 'error'); }
+                    try { 
+                        await axios.put(`${API}/settings/notifications`, notifSettings.value); 
+                        showToast('Configurazione salvata', 'success');
+                        formErrors.value = {};
+                    } catch (e) { 
+                        showToast(e.response?.data?.detail || 'Errore salvataggio', 'error'); 
+                    }
                     loading.value = false;
                 };
                 
@@ -9299,6 +9991,8 @@
                         
                         // Vai alla pagina sync e apri il modale
                         currentPage.value = 'sync';
+                        formErrors.value = {};
+                        syncJobAdvancedExpanded.value = false;
                         showSyncJobModal.value = true;
                         
                         showToast(`Configura la destinazione per la replica di ${vm.name || vm.vmid}`, 'info');
