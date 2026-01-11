@@ -153,7 +153,12 @@ if frontend_path:
     
     @app.get("/")
     async def serve_frontend():
-        return FileResponse(os.path.join(frontend_path, "index.html"))
+        response = FileResponse(os.path.join(frontend_path, "index.html"))
+        # Disabilita cache per sviluppo
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     
     @app.get("/{full_path:path}")
     async def catch_all(full_path: str):
@@ -164,10 +169,19 @@ if frontend_path:
         # Serve file statici se esistono
         file_path = os.path.join(frontend_path, full_path)
         if os.path.exists(file_path) and os.path.isfile(file_path):
-            return FileResponse(file_path)
+            response = FileResponse(file_path)
+            # Disabilita cache per sviluppo
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
         
         # SPA fallback
-        return FileResponse(os.path.join(frontend_path, "index.html"))
+        response = FileResponse(os.path.join(frontend_path, "index.html"))
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
 else:
     logger.warning("Frontend non trovato! L'interfaccia web non sarà disponibile.")
     logger.warning(f"Percorsi cercati: {possible_frontend_paths}")
